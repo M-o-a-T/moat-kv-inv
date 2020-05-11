@@ -1,0 +1,33 @@
+Source: distinv
+Maintainer: Matthias Urlichs <matthias@urlichs.de>
+Section: python
+Priority: optional
+Build-Depends: dh-python, python3-setuptools, python3-all, debhelper (>= 9)
+Standards-Version: 3.9.6
+Homepage: https://github.com/smurfix/distinv
+
+Package: python3-distinv
+Architecture: all
+Depends: ${misc:Depends}, ${python3:Depends}
+Description: Inventory management for DistKV
+ =======
+ DistInv
+ =======
+ .
+ DistInv is a link between DistKV and your network infrastructure.
+ .
+ DistInv knows about hosts, ports, VLANs, (sub)networks, cables.
+ .
+ It stores
+ * which VLAN a network is in
+ * which network a host belongs to
+ * which port is plugged into what
+ * which groups a host belongs to
+ * where a host is located
+ .
+ This allows you to
+ * record which systems are where (surprisingly difficult …)
+ * auto-generate (part of) your Ansible inventory
+ * display which VLANs need to be configured on a switch port
+ * generate a network link path from A to B
+
