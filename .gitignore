@@ -1,2 +1,4 @@
 __pycache__/
 /.pybuild/
+/dist/
+/distinv.egg*
