@@ -1,34 +1,33 @@
 """
 DistKV client data model for Inventory
 """
-import anyio
-from anyio.exceptions import ClosedResourceError
 import struct
 
 from distkv.obj import ClientEntry, ClientRoot, AttrClientEntry
-from distkv.util import combine_dict, NotGiven, attrdict
+from distkv.util import NotGiven, attrdict, Path
 from distkv.errors import ErrorRoot
-from collections.abc import Mapping
 from operator import attrgetter
+from collections import deque
 from weakref import ref, WeakSet, WeakValueDictionary
 
 from typing import Union
 
 from netaddr import IPNetwork, EUI, IPAddress, AddrFormatError
 import logging
+
 logger = logging.getLogger("distkv_ext.inv.model")
-        
+
 
 class NamedMixin:
-    def __init__(self,*a,**k):
+    def __init__(self, *a, **k):
         self.__named = {}
-        super().__init__(*a,**k)
+        super().__init__(*a, **k)
 
     def by_name(self, name):
         if name is None:
             return None
-        if not isinstance(name,str):
-            raise ValueError("No string: "+repr(name))
+        if not isinstance(name, str):
+            raise ValueError("No string: " + repr(name))
         return self.__named.get(name)
 
     def _add_name(self, obj):
@@ -37,40 +36,43 @@ class NamedMixin:
             return
 
         self.__named[n] = obj
-        obj.reg_del(self,'_del__name',obj,n)
-        
+        obj.reg_del(self, "_del__name", obj, n)
+
     def _del__name(self, obj, n):
         old = self.__named.pop(n)
         if old is None or old is obj:
             return
         # Oops, that has been superseded. Put it back.
         self.__named[n] = old
-        
+
+
 class SkipNone:
     def get_value(self, **kw):
-        kw['skip_none'] = True
-        kw['skip_empty'] = True
-        return super().get_value(**kw)
+        kw["skip_none"] = True
+        kw["skip_empty"] = True
+        return super().get_value(**kw)  # pylint: disable=no-member
+
 
 class Cleaner:
-    def __init__(self, *a,**k):
+    def __init__(self, *a, **k):
         self._cleaner = []
-        super().__init__(*a,**k)
+        super().__init__(*a, **k)
 
     def reg_del(self, p, m, o, *a, **k):
-        self._cleaner.append((ref(p),m, ref(o), a,k))
+        self._cleaner.append((ref(p), m, ref(o), a, k))
 
     async def set_value(self, value=NotGiven):
-        await super().set_value(value)
+        await super().set_value(value)  # pylint: disable=no-member
         self._clean_up()
 
     def _clean_up(self):
-        d,self._cleaner = self._cleaner,[]
-        for p,m,o,a,k in d:
+        d, self._cleaner = self._cleaner, []
+        for p, m, o, a, k in d:
             p = p()
             if p is None:
                 continue
-            attrgetter(m)(p)(o(),*a,**k)
+            attrgetter(m)(p)(o(), *a, **k)
+
 
 class InventoryRoot(ClientRoot):
     cls = {}
@@ -78,13 +80,15 @@ class InventoryRoot(ClientRoot):
     CFG = "inv"
     err = None
 
+    host = net = cable = group = vlan = wire = None
+
     async def run_starting(self):
-        self.host = self.follow("host", create=True)
-        self.net = self.follow("net", create=True)
-        self.cable = self.follow("cable", create=True)
-        self.group = self.follow("group", create=True)
-        self.vlan = self.follow("vlan", create=True)
-        self.wire = self.follow("wire", create=True)
+        self.host = self.follow(Path("host"), create=True)
+        self.net = self.follow(Path("net"), create=True)
+        self.cable = self.follow(Path("cable"), create=True)
+        self.group = self.follow(Path("group"), create=True)
+        self.vlan = self.follow(Path("vlan"), create=True)
+        self.wire = self.follow(Path("wire"), create=True)
 
         if self.err is None:
             self.err = await ErrorRoot.as_handler(self.client)
@@ -100,6 +104,7 @@ class InventoryRoot(ClientRoot):
         def acc(kls):
             cls.reg[typ] = kls
             return kls
+
         return acc
 
     @classmethod
@@ -109,12 +114,11 @@ class InventoryRoot(ClientRoot):
         except KeyError:
             return ClientEntry
 
-    def cable_for(self, *a,**k):
+    def cable_for(self, *a, **k):
         """\
             Return the cable for this node+port
             """
         return self.cable.cable_for(*a, **k)
-
 
 
 class Vlan(Cleaner, SkipNone, AttrClientEntry):
@@ -123,24 +127,25 @@ class Vlan(Cleaner, SkipNone, AttrClientEntry):
 
         Stored as ``inv vlan NUMBER``.
         """
-    ATTRS = ('desc','name')
-    AUX_ATTRS=('vlan',)
+
+    ATTRS = ("desc", "name")
+    AUX_ATTRS = ("vlan",)
 
     name = None
     desc = None
 
-    def __init__(self,*a,**k):
+    def __init__(self, *a, **k):
         self._nets = {}
-        super().__init__(*a,**k)
-    
-    def _add_net(self,obj):
+        super().__init__(*a, **k)
+
+    def _add_net(self, obj):
         n = obj.name
         if n is None:
             return
-        self._nets[n]=obj
-        obj.reg_del(self,'_del__net',obj,n)
+        self._nets[n] = obj
+        obj.reg_del(self, "_del__net", obj, n)
 
-    def _del__net(self,obj,n):
+    def _del__net(self, obj, n):
         try:
             old = self._nets.pop(n)
         except KeyError:
@@ -148,7 +153,7 @@ class Vlan(Cleaner, SkipNone, AttrClientEntry):
         if old is None or old is obj:
             return
         # Oops, that has been superseded. Put it back.
-        self._named[n] = old
+        self._nets[n] = old
 
     @property
     def vlan(self):
@@ -171,10 +176,10 @@ class Vlan(Cleaner, SkipNone, AttrClientEntry):
         return self._nets.values()
 
     def __repr__(self):
-        return "‹VLAN %s:%d›" % (self.name,self.vlan)
+        return "‹VLAN %s:%d›" % (self.name, self.vlan)
 
     def __str__(self):
-        return "%s~%d" % (self.name,self.vlan)
+        return "%s~%d" % (self.name, self.vlan)
 
 
 @InventoryRoot.register("vlan")
@@ -182,6 +187,8 @@ class VlanRoot(NamedMixin, ClientEntry):
     """\
         Manage VLANs.
         """
+
+    @classmethod
     def child_type(cls, name):
         return Vlan
 
@@ -196,7 +203,7 @@ class VlanRoot(NamedMixin, ClientEntry):
                 pass
         return res
 
-    async def update(self, value, _locked=False):
+    async def update(self, value, _locked=False):  # pylint: disable=arguments-differ
         raise ValueError("No values here!")
 
 
@@ -221,42 +228,43 @@ class Network(Cleaner, SkipNone, AttrClientEntry):
         integer except when it's larger than 2**64 (msgpack can't store
         these) in which case it's a 16-byte binary string instead. Sigh.
         """
-    ATTRS = ('desc','name','vlan','dhcp','master','shift','virt','mac')
-    AUX_ATTRS=('net','vlan_id','hosts')
-    desc=None
-    name=None
-    vlan=None
-    mac=False
-    shift=0
-    dhcp=(1,0)
-    virt=False
-    master=None
-    _next_adr = 2
-    _name=None
 
-    def __init__(self,*a,**kw):
+    ATTRS = ("desc", "name", "vlan", "dhcp", "master", "shift", "virt", "mac")
+    AUX_ATTRS = ("net", "vlan_id", "hosts")
+    desc = None
+    name = None
+    vlan = None
+    mac = False
+    shift = 0
+    dhcp = (1, 0)
+    virt = False
+    master = None
+    _next_adr = 2
+    _name = None
+
+    def __init__(self, *a, **kw):
         self._hosts = {}
-        self._slaves=WeakSet()
-        super().__init__(*a,**kw)
+        self._slaves = WeakSet()
+        super().__init__(*a, **kw)
 
     @property
     def net(self):
         n = self._path[-1]
-        if isinstance(n,bytes):
-            n = int.from_bytes(n, 'big')
+        if isinstance(n, bytes):
+            n = int.from_bytes(n, "big")
         return IPNetwork((n, self.prefix))
-    
+
     @property
     def max(self):
         p = self.prefix
         if p <= 32:
-            p = 32-p
+            p = 32 - p
         else:
-            p = 128-p
-        return (1<<p)-1
+            p = 128 - p
+        return (1 << p) - 1
 
-    def __eq__(self,net):
-        if isinstance(net,Network):
+    def __eq__(self, net):
+        if isinstance(net, Network):
             net = net._name
         return self.name == net
 
@@ -278,10 +286,10 @@ class Network(Cleaner, SkipNone, AttrClientEntry):
 
     def addr(self, num=0):
         n = self.net
-        n.value += num<<self.shift # sigh, should be a method
+        n.value += num << self.shift  # sigh, should be a method
         return n
 
-    def addrs(self,num=0):
+    def addrs(self, num=0):
         for n in self.all_nets:
             yield n.addr(num)
 
@@ -291,15 +299,15 @@ class Network(Cleaner, SkipNone, AttrClientEntry):
         for s in self._slaves:
             yield from s.all_nets
 
-    def _add_slave(self,net):
+    def _add_slave(self, net):
         if net is self:
             raise RuntimeError("owch")
         if self in net.all_nets:
-            return # cycle. Ugh.
+            return  # cycle. Ugh.
         self._slaves.add(net)
-        net.reg_del(self,'_del__slave',net)
+        net.reg_del(self, "_del__slave", net)
 
-    def _del__slave(self,net):
+    def _del__slave(self, net):
         if net is None:
             return
         self._slaves.remove(net)
@@ -311,12 +319,12 @@ class Network(Cleaner, SkipNone, AttrClientEntry):
         last = self._next_adr
         t = last
         while True:
-            n = t+1
+            n = t + 1
             if n >= self.max:
                 n = 2
             if self.dhcp:
                 a = self.dhcp[0]
-                b = a+self.dhcp[1]
+                b = a + self.dhcp[1]
                 if a <= n < b:
                     n = b
             if n >= self.max:
@@ -333,11 +341,11 @@ class Network(Cleaner, SkipNone, AttrClientEntry):
             'virt' shall either be True or not present
             """
         res = super().get_value(**kw)
-        m = res.get('master')
+        m = res.get("master")
         if m is not None:
-            res['master'] = m.name
-        if not res.get('virt',True):
-            del res['virt']
+            res["master"] = m.name
+        if not res.get("virt", True):
+            del res["virt"]
         return res
 
     async def set_value(self, value=NotGiven):
@@ -365,17 +373,17 @@ class Network(Cleaner, SkipNone, AttrClientEntry):
                 if p.net == self.name:
                     self._add_host(p)
 
-    async def save(self, *, wait=False):
-        if self.name is not None and self.root.net.by_name(self.name) not in (self,None):
-            raise KeyError("Duplicate name",self.name)
+    async def save(self, *, wait=False):  # pylint: disable=arguments-differ
+        if self.name is not None and self.root.net.by_name(self.name) not in (self, None):
+            raise KeyError("Duplicate name", self.name)
         if self.vlan is not None and self.root.vlan.by_name(self.vlan) is None:
-            raise KeyError("Unknown VLAN",self.vlan)
+            raise KeyError("Unknown VLAN", self.vlan)
         if self.dhcp is not None:
-            a,b = self.dhcp
+            a, b = self.dhcp
             # start,len. Thus start+len-1 is the top address and must be
             # <= the broadcast addr.
-            if b>1 and (a < 2 or a+b > self.max):
-                raise RuntimeError("Check DHCP params",self.dhcp)
+            if b > 1 and (a < 2 or a + b > self.max):
+                raise RuntimeError("Check DHCP params", self.dhcp)
         await super().save(wait=wait)
 
     @property
@@ -390,9 +398,9 @@ class Network(Cleaner, SkipNone, AttrClientEntry):
         if not host.num:
             return
         self._hosts[host.num] = host
-        host.reg_del(self,'_del__host',host,host.num)
+        host.reg_del(self, "_del__host", host, host.num)
 
-    def _del__host(self,host,n):
+    def _del__host(self, host, n):
         try:
             old = self._hosts.pop(n)
         except KeyError:
@@ -402,60 +410,68 @@ class Network(Cleaner, SkipNone, AttrClientEntry):
         # Oops, that has been superseded. Put it back.
         self._hosts[n] = old
 
-    def by_num(self,num):
+    def by_num(self, num):
         return self._hosts[num]
 
     def __repr__(self):
-        return "‹Net %s:%s›" % (self.name,self.net)
+        return "‹Net %s:%s›" % (self.name, self.net)
 
     def __str__(self):
-        j={}
-        j['vlan']=self.vlan
+        j = {}
+        j["vlan"] = self.vlan
         if self.dhcp:
-            j['dhcp'] = "%d-%d" % (self.dhcp[0],self.dhcp[0]+self.dhcp[1]-1)
-        return "%s %s %s" % (self.name,self.net, " ".join("%s=%s" % (k,v)
-            for k,v in j.items() if v))
+            j["dhcp"] = "%d-%d" % (self.dhcp[0], self.dhcp[0] + self.dhcp[1] - 1)
+        return "%s %s %s" % (
+            self.name,
+            self.net,
+            " ".join("%s=%s" % (k, v) for k, v in j.items() if v),
+        )
 
 
 class NetRootB(ClientEntry):
     """\
         Cables are unnamed and stored as (node,tock) tuple.
         """
+
+    @classmethod
     def child_type(cls, name):
-        if not isinstance(name,int):
-            if isinstance(name,bytes) and len(name)==16:
+        if not isinstance(name, int):
+            if isinstance(name, bytes) and len(name) == 16:
                 return Network
             return ClientEntry
         return Network
 
-    async def update(self, value, _locked=False):
+    async def update(self, value, _locked=False):  # pylint: disable=arguments-differ
         raise ValueError("No values here!")
 
-    def get(self, val):
-        if isinstance(val,int) and val>=2**64:
-            val = val.to_bytes(16,'big')
+    def get(self, val):  # pylint: disable=arguments-differ
+        if isinstance(val, int) and val >= 2 ** 64:
+            val = val.to_bytes(16, "big")
         return super().get(val)
 
     def __getitem__(self, val):
-        if isinstance(val,int) and val>=2**64:
-            val = val.to_bytes(16,'big')
+        if isinstance(val, int) and val >= 2 ** 64:
+            val = val.to_bytes(16, "big")
         return super().__getitem__(val)
+
 
 @InventoryRoot.register("net")
 class NetRoot(NamedMixin, ClientEntry):
     """\
         Manage networks.
         """
-    def __init__(self,*a,**k):
-        self._nets = {}
-        super().__init__(*a,**k)
 
+    def __init__(self, *a, **k):
+        self._nets = {}
+        super().__init__(*a, **k)
+
+    @classmethod
     def child_type(cls, name):
-        if not isinstance(name,int):
+        if not isinstance(name, int):
             return ClientEntry
         return NetRootB
 
-    def by_name(self, net):
+    def by_name(self, net):  # pylint: disable=arguments-differ
         n = super().by_name(net)
         if n is not None:
             return n
@@ -468,7 +484,7 @@ class NetRoot(NamedMixin, ClientEntry):
 
     def enclosing(self, net):
         """find the network containing this address"""
-        if hasattr(net,'cidr'):
+        if hasattr(net, "cidr"):
             return self[net.prefixlen][net.cidr.value]
         else:
             n = IPNetwork(net)
@@ -482,17 +498,17 @@ class NetRoot(NamedMixin, ClientEntry):
                     if not n.prefixlen:
                         raise KeyError(net) from None
 
-    def allocate(self, net):
-        if not isinstance(net,IPNetwork):
+    def allocate(self, net):  # pylint: disable=arguments-differ
+        if not isinstance(net, IPNetwork):
             return super().allocate(net)
         n = super().allocate(net.prefixlen, exists=True)
         val = net.cidr.value
-        if val >= 2**64:
-            val = val.to_bytes(16,'big')
+        if val >= 2 ** 64:
+            val = val.to_bytes(16, "big")
         return n.allocate(val)
 
-    def get(self, net):
-        if not isinstance(net,IPNetwork):
+    def get(self, net):  # pylint: disable=arguments-differ
+        if not isinstance(net, IPNetwork):
             return super().get(net)
         n = super().get(net.prefixlen)
         if n is None:
@@ -500,40 +516,39 @@ class NetRoot(NamedMixin, ClientEntry):
         return n.get(net.network.value)
 
     def __getitem__(self, net):
-        if not isinstance(net,IPNetwork):
+        if not isinstance(net, IPNetwork):
             return super().__getitem__(net)
         return super().__getitem__(net.prefixlen)[net.network.value]
 
-    async def update(self, value, _locked=False):
+    async def update(self, value, _locked=False):  # pylint: disable=arguments-differ
         raise ValueError("No values here!")
 
 
 class HostPort(Cleaner):
-    ATTRS=('desc','mac')
-    ATTRS2=('net','num')
-    AUX_ATTRS=('netaddr','vlan','link_to')
-    desc=None
-    vlan=None
-    net=None
-    num=None
-    mac=None
+    ATTRS = ("desc", "mac")
+    ATTRS2 = ("net", "num")
+    AUX_ATTRS = ("netaddr", "vlan", "link_to")
+    desc = None
+    net = None
+    num = None
+    mac = None
 
-    def __init__(self, host,name,kv):
-        self.host=host
-        self.name=name
+    def __init__(self, host, name, kv):
+        self.host = host
+        self.name = name
 
         super().__init__()
 
-        for a in self.ATTRS+self.ATTRS2:
-            setattr(self,a,kv.pop(a,None))
+        for a in self.ATTRS + self.ATTRS2:
+            setattr(self, a, kv.pop(a, None))
 
         m = self.mac
         if m is not None:
-            m = struct.unpack('>%dH'%(len(m)/2), m)
+            m = struct.unpack(">%dH" % (len(m) / 2), m)
             mm = 0
             for m_ in m:
-                mm = (mm<<16)+m_
-            self.mac = EUI(mm,len(m)*16)
+                mm = (mm << 16) + m_
+            self.mac = EUI(mm, len(m) * 16)
 
         self.attrs = attrdict(kv)
 
@@ -558,30 +573,30 @@ class HostPort(Cleaner):
 
     @property
     def vlan(self):
-        vlan = self.attrs.get('vlan',None)
-        if isinstance(vlan,bool):
+        vlan = self.attrs.get("vlan", None)
+        if isinstance(vlan, bool):
             return vlan
         if vlan is None:
             return None
         return self.host.root.vlan.by_name(vlan)
 
     @vlan.setter
-    def vlan(self, vlan: Union[None,bool,str,Vlan]):
+    def vlan(self, vlan: Union[None, bool, str, Vlan]):
         if vlan is not None:
-            if isinstance(vlan,bool):
+            if isinstance(vlan, bool):
                 pass
-            elif not isinstance(vlan,str):
+            elif not isinstance(vlan, str):
                 vlan = vlan.name
             elif self.host.root.vlan.by_name(vlan) is None:
                 raise ValueError("VLAN '%s' does not exist" % (vlan,))
             self.attrs.vlan = vlan
         else:
-            self.attrs.pop('vlan',None)
+            self.attrs.pop("vlan", None)
 
     async def rename(self, name):
         h = self.host
         if name in h.port:
-            raise KeyError("Port exists".name)
+            raise KeyError("Port exists", name)
 
         c = self.link_to
         del h.port[self.name]
@@ -595,7 +610,7 @@ class HostPort(Cleaner):
         if c is not None:
             await self.link(c, wait=True)
 
-    async def link(self,other, wait=True, force=False):
+    async def link(self, other, wait=True, force=False):
         await self.host.root.cable.link(self, other, wait=wait, force=force)
 
     async def unlink(self):
@@ -603,7 +618,7 @@ class HostPort(Cleaner):
 
     @vlan.deleter
     def vlan(self):
-        self.attrs.pop('vlan',None)
+        self.attrs.pop("vlan", None)
 
     @property
     def cable(self):
@@ -618,40 +633,40 @@ class HostPort(Cleaner):
 
     def get_value(self):
         res = dict(self.attrs)
-        for k in self.ATTRS+self.ATTRS2:
-            v = getattr(self,k,None)
+        for k in self.ATTRS + self.ATTRS2:
+            v = getattr(self, k, None)
             if v is not None:
                 res[k] = v
-        if 'mac' in res:
-            res['mac'] = res['mac'].packed
+        if "mac" in res:
+            res["mac"] = res["mac"].packed
         return res
-        
-    def set_value(self, _):
+
+    def set_value(self, _):  # pylint: disable=signature-differs
         raise RuntimeError("This does not work.")
 
     def __repr__(self):
-        return "<Port %s:%s>" % (self.host.name,self.name)
+        return "<Port %s:%s>" % (self.host.name, self.name)
 
     def __str__(self):
-        return "%s:%s" % (self.host.name,self.name)
+        return "%s:%s" % (self.host.name, self.name)
 
 
 class Host(Cleaner, SkipNone, AttrClientEntry):
-    ATTRS = ('name','net','mac','num','desc','loc','groups')
-    AUX_ATTRS=('ports','domain','cable','netaddr')
-    net=None
-    ports=()
-    name=None
-    num=None
-    mac=None
-    desc=None
-    loc=None
-    groups=()
+    ATTRS = ("name", "net", "mac", "num", "desc", "loc", "groups")
+    AUX_ATTRS = ("ports", "domain", "cable", "netaddr")
+    net = None
+    name = None
+    num = None
+    mac = None
+    desc = None
+    loc = None
+    groups = ()
 
-    def __init__(self, *a,**k):
+    def __init__(self, *a, **k):
         self._ports = {}
-        super().__init__(*a,**k)
+        super().__init__(*a, **k)
 
+    @classmethod
     def child_type(cls, name):
         return Host
 
@@ -669,7 +684,7 @@ class Host(Cleaner, SkipNone, AttrClientEntry):
     def network(self, net):
         n = self.root.net[net]
         self.net = n.name
-        self.num = net.value-n.net.value
+        self.num = net.value - n.net.value
 
     @network.deleter
     def network(self):
@@ -696,7 +711,7 @@ class Host(Cleaner, SkipNone, AttrClientEntry):
         if n is None:
             return None
         n = n.net
-        n.value += self.num # sigh, should be a method
+        n.value += self.num  # sigh, should be a method
         return n
 
     @property
@@ -714,29 +729,29 @@ class Host(Cleaner, SkipNone, AttrClientEntry):
             Iterator on all hosts reachable by this one.
             """
         todo = deque()
-        todo.append((self,()))   
-        def work():
-            while todo:    
-                w,wp = todo.popleft()
-                wx = w
-                if hasattr(w,'host'):
-                    w = w.host
-                if w in seen: 
-                    continue
-                seen.add(w)
-                yield wx,wp
-        
-                if hasattr(w,'port'):
-                    for n,p in w.port.items():
-                        c = p.link_to
-                        if c is not None:
-                            todo.append((c,wp+(p,c)))
-                        elif p.net:
-                            n = p.network
-                            if n.virt:
-                                for hh in n.hosts:
-                                    todo.append((hh,wp+(p,hh)))
+        todo.append((self, ()))
 
+        seen = set()
+        while todo:
+            w, wp = todo.popleft()
+            wx = w
+            if hasattr(w, "host"):
+                w = w.host
+            if w in seen:
+                continue
+            seen.add(w)
+            yield wx, wp
+
+            if hasattr(w, "port"):
+                for n, p in w.port.items():
+                    c = p.link_to
+                    if c is not None:
+                        todo.append((c, wp + (p, c)))
+                    elif p.net:
+                        n = p.network
+                        if n.virt:
+                            for hh in n.hosts:
+                                todo.append((hh, wp + (p, hh)))
 
     @property
     def port(self):
@@ -745,15 +760,15 @@ class Host(Cleaner, SkipNone, AttrClientEntry):
     @property
     def ports(self):
         r = {}
-        for k,v in self._ports.items():
+        for k, v in self._ports.items():
             vv = []
             c = self.root.cable.cable_for(v)
             cc = None
             if c is not None:
                 cc = c.other_end(self)
-                vv.append(cc) # port
-                while isinstance(getattr(cc,'host',None),Wire):
-                    cc = cc.host.other_end(cc) # wire's other end
+                vv.append(cc)  # port
+                while isinstance(getattr(cc, "host", None), Wire):
+                    cc = cc.host.other_end(cc)  # wire's other end
                     cv = self.root.cable.cable_for(cc)
                     if cv is not None:
                         vv[-1] = cc.host.name
@@ -770,11 +785,11 @@ class Host(Cleaner, SkipNone, AttrClientEntry):
             r[k] = vv
         return r
 
-    def add_port(self,name, **kw):
+    def add_port(self, name, **kw):
         if name in self._ports:
-            raise KeyError("Duplicate port",name)
-        p = HostPort(self,name, kw)
-        self._ports[name]=p
+            raise KeyError("Duplicate port", name)
+        p = HostPort(self, name, kw)
+        self._ports[name] = p
         return p
 
     async def delete_port(self, port, *, wait=False):
@@ -784,21 +799,20 @@ class Host(Cleaner, SkipNone, AttrClientEntry):
         del self._ports[port.name]
         await self.save(wait=wait)
 
-    async def delete(self, *, wait=False):
+    async def delete(self, *, wait=False):  # pylint: disable=arguments-differ
         for port in list(self._ports.values()):
             c = self.root.cable.cable_for(port)
             if c is not None:
                 await c.delete(wait=wait)
         await super().delete(wait=wait)
 
-    async def save(self, *, wait=False):
+    async def save(self, *, wait=False):  # pylint: disable=arguments-differ
         if self.net is None:
             self.num = None
         for p in self._ports.values():
             if p.net is None:
                 p.num = None
         await super().save(wait=wait)
-
 
     async def set_value(self, value=NotGiven):
         """\
@@ -807,7 +821,7 @@ class Host(Cleaner, SkipNone, AttrClientEntry):
         if value is NotGiven:
             ports = {}
         else:
-            ports = value.pop('ports',{})
+            ports = value.pop("ports", {})
 
         await super().set_value(value)
 
@@ -815,10 +829,10 @@ class Host(Cleaner, SkipNone, AttrClientEntry):
             self._ports = {}
             return
 
-        for k in [ k for k in self._ports.keys() if k not in ports ]:
+        for k in [k for k in self._ports.keys() if k not in ports]:
             del self._ports[k]
-        for k,v in ports.items():
-            self._ports[k] = HostPort(self,k,v)
+        for k, v in ports.items():
+            self._ports[k] = HostPort(self, k, v)
 
         self._hostroot._add_name(self)
         n = self.net
@@ -834,29 +848,28 @@ class Host(Cleaner, SkipNone, AttrClientEntry):
 
         m = self.mac
         if m is not None:
-            m = struct.unpack('>%dH'%(len(m)/2), m)
+            m = struct.unpack(">%dH" % (len(m) / 2), m)
             mm = 0
             for m_ in m:
-                mm = (mm<<16)+m_
-            self.mac = EUI(mm,len(m)*16)
+                mm = (mm << 16) + m_
+            self.mac = EUI(mm, len(m) * 16)
 
-    async def link(self,other, *, wait=True, force=False):
+    async def link(self, other, *, wait=True, force=False):
         await self.root.cable.link(self, other, wait=wait, force=force)
 
     async def unlink(self, *, wait=False):
         await self.root.cable.unlink(self, wait=wait)
 
-
-    def get_value(self):
-        if self.name is not None and self.root.net.by_name(self.name) not in (self,None):
-            raise KeyError("Duplicate name",self.name)
+    def get_value(self):  # pylint: disable=arguments-differ
+        if self.name is not None and self.root.net.by_name(self.name) not in (self, None):
+            raise KeyError("Duplicate name", self.name)
 
         val = super().get_value()
-        val['ports'] = p = {}
-        for k,v in self._ports.items():
+        val["ports"] = p = {}
+        for k, v in self._ports.items():
             p[k] = v.get_value()
-        if 'mac' in val:
-            val['mac'] = val['mac'].packed
+        if "mac" in val:
+            val["mac"] = val["mac"].packed
         return val
 
     @property
@@ -867,18 +880,22 @@ class Host(Cleaner, SkipNone, AttrClientEntry):
         return "<Host %s: %s %s>" % (self.name, self.domain, self.netaddr)
 
     def __str__(self):
-        j={}
+        j = {}
         if self.net:
-            #j['adr'] = list(self.netaddrs)
-            j['adr'] = self.netaddr
-        return "%s:%s %s" % (self.name, self.domain, " ".join("%s=%s" % (k,v) for k,v in j.items()))
+            # j['adr'] = list(self.netaddrs)
+            j["adr"] = self.netaddr
+        return "%s:%s %s" % (
+            self.name,
+            self.domain,
+            " ".join("%s=%s" % (k, v) for k, v in j.items()),
+        )
 
 
 @InventoryRoot.register("host")
 class HostRoot(NamedMixin, ClientEntry):
     def __init__(self, *a, **k):
         self._hosts = {}
-        super().__init__(*a,**k)
+        super().__init__(*a, **k)
 
     @classmethod
     def child_type(cls, name):
@@ -889,9 +906,9 @@ class HostRoot(NamedMixin, ClientEntry):
         return self
 
     def by_domain(self, name, create=None):
-        return self.follow(*name.split('.')[::-1], create=create)
+        return self.follow(Path.build(name.split(".")[::-1]), create=create)
 
-    async def update(self, value, _locked=False):
+    async def update(self, value, _locked=False):  # pylint: disable=arguments-differ
         raise ValueError("No values here!")
 
     def by_name(self, name):
@@ -905,29 +922,30 @@ class HostRoot(NamedMixin, ClientEntry):
 
         try:
             n = IPAddress(name)
-        except(ValueError,AddrFormatError):
+        except (ValueError, AddrFormatError):
             pass
         else:
             e = self.root.net.enclosing(n)
             if e is None:
                 return None
             try:
-                return e.by_num(n.value-e.net.cidr.value)
+                return e.by_num(n.value - e.net.cidr.value)
             except KeyError:
                 return None
 
 
 @InventoryRoot.register("cable")
 class CableRoot(ClientEntry):
-    def __init__(self, *a,**k):
+    def __init__(self, *a, **k):
         self._port2cable = {}
-        super().__init__(*a,**k)
+        super().__init__(*a, **k)
 
     async def _running(self):
         for c in self.all_children:
             if c.dest_a is None or c.dest_b is None:
                 await c._resolve()
 
+    @classmethod
     def child_type(cls, name):
         return CableRootB
 
@@ -938,7 +956,7 @@ class CableRoot(ClientEntry):
             @create: if True, error if exists; if False, error if not
             otherwise cable or None
             """
-        h,p = self._hp(obj)
+        h, p = self._hp(obj)
         try:
             c = self._port2cable[h][p]
         except KeyError:
@@ -962,14 +980,14 @@ class CableRoot(ClientEntry):
         if c1 is not None and c1 is c2:
             return
         if not (force or (c1 is None and c2 is None)):
-            raise KeyError("Cable exists",c1,c2)
+            raise KeyError("Cable exists", c1, c2)
         if c1 is not None:
             await c1.delete()
         if c2 is not None:
             await c2.delete()
 
         client = self.root.client
-        c = self.follow(client.server_name, await client.get_tock(), create=True)
+        c = self.follow(Path(client.server_name, await client.get_tock()), create=True)
         await c.link(obj_a, obj_b, wait=wait)
 
     async def unlink(self, dest, *, ignore=False, wait=False):
@@ -981,32 +999,32 @@ class CableRoot(ClientEntry):
             raise KeyError(dest) from None
         await c.unlink(wait=wait)
 
-
     @staticmethod
     def _hp(dest):
-        if hasattr(dest,'subpath'):
+        if hasattr(dest, "subpath"):
             h = dest.subpath
             p = None
         else:
             h = dest.host.subpath
             p = dest.name
-        return h,p
+        return h, p
 
     async def _add_cable(self, cable):
         """
             Add this link to the cache
             """
+
         def aa(dest):
-            h,p=self._hp(dest)
+            h, p = self._hp(dest)
             c = self._port2cable.get(h)
             if c is None:
                 self._port2cable[h] = c = WeakValueDictionary()
             oc = c.get(p)
-            if oc not in (None,cable):
-                logger.error("Collision: %r/%r %r/%r",cable,cable._path,oc,oc._path)
+            if oc not in (None, cable):
+                logger.error("Collision: %r/%r %r/%r", cable, cable._path, oc, oc._path)
                 return
             c[p] = cable
-            cable.reg_del(self,'_del__cable',cable,ref(dest))
+            cable.reg_del(self, "_del__cable", cable, ref(dest))
 
         try:
             aa(cable.dest_a)
@@ -1015,8 +1033,7 @@ class CableRoot(ClientEntry):
         try:
             aa(cable.dest_b)
         except Exception:
-            self._del__cable(cable,ref(cable.dest_a))
-
+            self._del__cable(cable, ref(cable.dest_a))
 
     def _del__cable(self, cable, dest):
         """
@@ -1025,15 +1042,15 @@ class CableRoot(ClientEntry):
         dest = dest()
         if dest is None:
             return
-        h,p = self._hp(dest)
-        old = self._port2cable.pop(h,{}).pop(p,None)
+        h, p = self._hp(dest)
+        old = self._port2cable.pop(h, {}).pop(p, None)
         if old is None or old is cable:
-            if not self._port2cable.get(h,True):
+            if not self._port2cable.get(h, True):
                 del self._port2cable[h]
         else:
             self._port2cable[h][p] = old
 
-    async def update(self, value, _locked=False):
+    async def update(self, value, _locked=False):  # pylint: disable=arguments-differ
         raise ValueError("No values here!")
 
 
@@ -1041,10 +1058,12 @@ class CableRootB(ClientEntry):
     """\
         Cables are unnamed and stored as (node,tock) tuple.
         """
+
+    @classmethod
     def child_type(cls, name):
         return Cable
 
-    async def update(self, value, _locked=False):
+    async def update(self, value, _locked=False):  # pylint: disable=arguments-differ
         raise ValueError("No values here!")
 
 
@@ -1066,13 +1085,13 @@ class Cable(Cleaner, AttrClientEntry):
         if self.dest_b is dest:
             return self.dest_a
 
-        if not hasattr(dest,'subpath'):
+        if not hasattr(dest, "subpath"):
             dest = dest.host
         d_a = self.dest_a
-        if not hasattr(d_a,'subpath'):
+        if not hasattr(d_a, "subpath"):
             d_a = d_a.host
         d_b = self.dest_b
-        if not hasattr(d_b,'subpath'):
+        if not hasattr(d_b, "subpath"):
             d_b = d_b.host
         if d_a is dest:
             return self.dest_b
@@ -1090,8 +1109,8 @@ class Cable(Cleaner, AttrClientEntry):
     async def _resolve(self):
         def res(dest):
             try:
-                d = self.root.follow(*dest[0])
-                if len(dest)>1:
+                d = self.root.follow(dest[0])
+                if len(dest) > 1:
                     d = d._ports[dest[1]]
             except KeyError:
                 d = None
@@ -1101,15 +1120,14 @@ class Cable(Cleaner, AttrClientEntry):
             if self.dest_a is None:
                 assert self.dest_b is None
                 return
-            self._ppar._del__cable(self.dest_a,ref(self.dest_b))
-            self._ppar._del__cable(self.dest_b,ref(self.dest_a))
+            self._ppar._del__cable(self.dest_a, ref(self.dest_b))
+            self._ppar._del__cable(self.dest_b, ref(self.dest_a))
             self.dest_a = None
             self.dest_b = None
         else:
-            self.dest_a = res(self.value['a'])
-            self.dest_b = res(self.value['b'])
+            self.dest_a = res(self.value["a"])
+            self.dest_b = res(self.value["b"])
             await self._ppar._add_cable(self)
-    
 
     async def link(self, dest_a, dest_b, *, wait=True):
         """\
@@ -1118,10 +1136,10 @@ class Cable(Cleaner, AttrClientEntry):
         if self.value is not NotGiven:
             raise KeyError("Cable already saved")
 
-        if len(getattr(dest_a,'port',())):
-            raise ValueError("Can't link directly to a host: %r" %(dest_a,))
-        if len(getattr(dest_b,'port',())):
-            raise ValueError("Can't link directly to a host: %r" %(dest_b,))
+        if len(getattr(dest_a, "port", ())):
+            raise ValueError("Can't link directly to a host: %r" % (dest_a,))
+        if len(getattr(dest_b, "port", ())):
+            raise ValueError("Can't link directly to a host: %r" % (dest_b,))
         self.dest_a = dest_a
         self.dest_b = dest_b
 
@@ -1133,21 +1151,22 @@ class Cable(Cleaner, AttrClientEntry):
             """
         await self.delete(wait=wait)
 
-    async def save(self, *, wait=False):
+    async def save(self, *, wait=False):  # pylint: disable=arguments-differ
         if self.dest_a is None or self.dest_b is None:
             await self.delete()
         else:
             await super().save(wait=wait)
 
-    def get_value(self, **kw):
+    def get_value(self, **kw):  # pylint: disable=arguments-differ
         val = super().get_value(**kw)
-        def wr(dest):
-            if hasattr(dest,'subpath'):
-                return (dest.subpath,)
-            return (dest.host.subpath,dest.name)
 
-        val['a'] = wr(self.dest_a)
-        val['b'] = wr(self.dest_b)
+        def wr(dest):
+            if hasattr(dest, "subpath"):
+                return (dest.subpath,)
+            return (dest.host.subpath, dest.name)
+
+        val["a"] = wr(self.dest_a)
+        val["b"] = wr(self.dest_b)
 
         return val
 
@@ -1157,13 +1176,13 @@ class Cable(Cleaner, AttrClientEntry):
         if self.dest_b is dest:
             return True
 
-        if not hasattr(dest,'subpath'):
+        if not hasattr(dest, "subpath"):
             dest = dest.host
         d_a = self.dest_a
-        if not hasattr(d_a,'subpath'):
+        if not hasattr(d_a, "subpath"):
             d_a = d_a.host
         d_b = self.dest_b
-        if not hasattr(d_b,'subpath'):
+        if not hasattr(d_b, "subpath"):
             d_b = d_b.host
 
         if d_a is dest:
@@ -1173,28 +1192,29 @@ class Cable(Cleaner, AttrClientEntry):
         return False
 
     def __repr__(self):
-        return "<Cable %r %r>" % (self.dest_a,self.dest_b)
+        return "<Cable %r %r>" % (self.dest_a, self.dest_b)
 
     def __str__(self):
-        if hasattr(self.dest_a,'port'):
+        if hasattr(self.dest_a, "port"):
             a = self.dest_a.name
         else:
             a = str(self.dest_a)
-        if hasattr(self.dest_b,'port'):
+        if hasattr(self.dest_b, "port"):
             b = self.dest_b.name
         else:
             b = str(self.dest_b)
-        return "%s %s" % (a,b)
+        return "%s %s" % (a, b)
 
 
 class Wire(Cleaner, SkipNone, AttrClientEntry):
-    ATTRS = ('loc','desc')
-    AUX_ATTRS=('ports',)
+    ATTRS = ("loc", "desc")
+    AUX_ATTRS = ("ports",)
 
-    def __init__(self, *a,**k):
-        self._ports = {'a':HostPort(self,'a',{}), 'b':HostPort(self,'b',{})}
-        super().__init__(*a,**k)
+    def __init__(self, *a, **k):
+        self._ports = {"a": HostPort(self, "a", {}), "b": HostPort(self, "b", {})}
+        super().__init__(*a, **k)
 
+    @classmethod
     def child_type(cls, name):
         # one layer, for now.
         return ClientEntry
@@ -1202,7 +1222,7 @@ class Wire(Cleaner, SkipNone, AttrClientEntry):
     @property
     def ports(self):
         r = {}
-        for k,v in self._ports.items():
+        for k, v in self._ports.items():
             vv = None
             c = self.root.cable.cable_for(v)
             if c is not None:
@@ -1215,21 +1235,21 @@ class Wire(Cleaner, SkipNone, AttrClientEntry):
         return self.subpath[-1]
 
     def other_end(self, port):
-        if port.name == 'a':
-            return self._ports['b']
-        elif port.name == 'b':
-            return self._ports['a']
+        if port.name == "a":
+            return self._ports["b"]
+        elif port.name == "b":
+            return self._ports["a"]
         return None
 
     @property
     def port(self):
         return self._ports
 
-    def add_port(self,name, **kw):
+    def add_port(self, name, **kw):
         if name in self._ports:
-            raise KeyError("Duplicate port",name)
-        p = HostPort(self,name, kw)
-        self._ports[name]=p
+            raise KeyError("Duplicate port", name)
+        p = HostPort(self, name, kw)
+        self._ports[name] = p
         return p
 
     async def set_value(self, value=NotGiven):
@@ -1243,9 +1263,9 @@ class Wire(Cleaner, SkipNone, AttrClientEntry):
 
         self.parent._add_name(self)
 
-    def get_value(self):
-        if self.name is not None and self.root.net.by_name(self.name) not in (self,None):
-            raise KeyError("Duplicate name",self.name)
+    def get_value(self):  # pylint: disable=arguments-differ
+        if self.name is not None and self.root.net.by_name(self.name) not in (self, None):
+            raise KeyError("Duplicate name", self.name)
 
         return super().get_value()
 
@@ -1253,30 +1273,28 @@ class Wire(Cleaner, SkipNone, AttrClientEntry):
         return "<Wire %s>" % (self.name,)
 
     def __str__(self):
-        a = self.ports['a']
+        a = self.ports["a"]
         if a is None:
-            a = '-'
-        b = self.ports['b']
+            a = "-"
+        b = self.ports["b"]
         if b is None:
-            b = '-'
+            b = "-"
 
-        return "%s %s %s" % (self.name,a,b)
+        return "%s %s %s" % (self.name, a, b)
 
 
 @InventoryRoot.register("wire")
 class WireRoot(NamedMixin, ClientEntry):
     def __init__(self, *a, **k):
         self._hosts = {}
-        super().__init__(*a,**k)
+        super().__init__(*a, **k)
 
     @classmethod
     def child_type(cls, name):
         return Wire
 
     def by_domain(self, name, create=None):
-        return self.follow(*name.split('.')[::-1], create=create)
+        return self.follow(Path.build(name.split(".")[::-1]), create=create)
 
-    async def update(self, value, _locked=False):
+    async def update(self, value, _locked=False):  # pylint: disable=arguments-differ
         raise ValueError("No values here!")
-
-
