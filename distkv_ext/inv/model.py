@@ -782,6 +782,8 @@ class Host(Cleaner, SkipNone, AttrClientEntry):
                 vv.append(v.netaddr)
             elif v.net:
                 vv.append(v.net)
+            if not vv and v.desc:
+                vv.append(f"({v.desc})")
             r[k] = vv
         return r
 

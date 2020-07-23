@@ -121,7 +121,7 @@ def inv_sub(*a, **kw):
     def alloc(obj, name):
         # Allocate a new thing
         if isinstance(name, (tuple, list)):
-            n = this(obj).follow(*name, create=True)
+            n = this(obj).follow(name, create=True)
         else:
             n = this(obj).allocate(name)
         return n
