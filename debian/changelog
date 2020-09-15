@@ -1,3 +1,9 @@
+distinv (0.20.0-3) unstable; urgency=medium
+
+  * *sigh* fixing rules file
+
+ -- Matthias Urlichs <matthias@urlichs.de>  Tue, 15 Sep 2020 08:07:51 +0200
+
 distinv (0.20.0-2) unstable; urgency=medium
 
   * Package rename
