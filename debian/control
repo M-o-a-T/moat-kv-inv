@@ -7,10 +7,12 @@ Build-Depends: dh-python, python3-setuptools, python3-all, debhelper (>= 9),
 Standards-Version: 3.9.6
 Homepage: https://github.com/smurfix/distinv
 
-Package: python3-distinv
+Package: distkv-inv
 Architecture: all
 Depends: ${misc:Depends}, ${python3:Depends},
   distkv (>= 0.30),
+Replaces: python3-distinv
+Conflicts: python3-distinv
 Description: Inventory management for DistKV
  DistInv is a link between DistKV and your network infrastructure.
  .

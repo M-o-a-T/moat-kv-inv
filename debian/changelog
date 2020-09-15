@@ -1,3 +1,9 @@
+distinv (0.20.0-2) unstable; urgency=medium
+
+  * Package rename
+
+ -- Matthias Urlichs <matthias@urlichs.de>  Tue, 15 Sep 2020 08:02:46 +0200
+
 distinv (0.20.0-1) unstable; urgency=medium
 
   * Merge
