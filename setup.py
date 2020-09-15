@@ -11,7 +11,7 @@ setup(
     author="Matthias Urlichs",
     author_email="matthias@urlichs.de",
     license="MIT -or- Apache License 2.0",
-    packages=find_packages(),
+    packages=["distkv_ext.inv"],
     setup_requires=["setuptools_scm", "pytest-runner", "trustme >= 0.5"],
     install_requires=["distkv >= 0.40"],
     tests_require=["trustme >= 0.5", "pytest", "flake8 >= 3.7"],
