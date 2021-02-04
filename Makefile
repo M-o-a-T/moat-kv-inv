@@ -3,6 +3,7 @@
 .PHONY: install
 
 PACKAGE=distkv_ext
+PYPI=distkv_inv
 
 install:
 	mkdir -p $(PREFIX)/lib/systemd/system

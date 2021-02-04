@@ -1,0 +1,11 @@
+
+config dropbear
+	option Port '22'
+	option RootPasswordAuth 'off'
+	option PasswordAuth 'off'
+
+config dropbear
+	option RootPasswordAuth 'off'
+	option PasswordAuth 'off'
+	option Port '50022'
+

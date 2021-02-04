@@ -1,0 +1,7 @@
+# Put your custom commands here that should be executed once
+# the system init finished. By default this file does nothing.
+
+echo 0 > /sys/devices/platform/leds/leds/ubnt:blue:dome/brightness
+echo 0 > /sys/devices/platform/leds/leds/ubnt:white:dome/brightness
+
+exit 0

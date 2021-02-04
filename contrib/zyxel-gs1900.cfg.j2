@@ -1,0 +1,67 @@
+! System Description: ZyXEL GS1900 Switch
+!
+!
+system name "{{host.name | default("unknown") }}"
+system location "{{host.loc | default("unknown") }}"
+system contact "Smurf"
+ip address {{host.netaddr.ip }} mask {{ host.netaddr.netmask }}
+ip default-gateway {{ host.netaddr.network+1 }}
+ip dns 10.107.8.130 0.0.0.0
+clock source sntp
+sntp host 10.107.0.1 port 123
+username "admin" secret 8 $8$hytCmvXU$9d91a1e5949c530ec82a5cf47f1d82dee3bdb9128a95d7a3cc802b27cb8ba0f6
+{% for v,n in vlans.items() %}
+{%- if n > 0 or v == host.network.vlan %}
+vlan {{ v.vlan }}
+ name "{{ v.name }}"
+{%- endif %}
+{%- endfor %}
+{% for v,n in vlans.items() %}
+{%- if n == 0 and v != host.network.vlan %}
+! unused: "{{ v.name }}" {{ v.vlan }}
+{%- endif %}
+{%- endfor %}
+!
+ip http session-timeout 30
+ip https session-timeout 30
+!
+management-vlan vlan {{ host.network.vlan_id }}
+!
+no snmp community "public"
+snmp community "sekrit"  rw
+!
+ip ssh
+!
+ip http session-timeout 60
+ip https session-timeout 60
+!
+management access-list default
+!
+{% for p in ports %}
+! {{ p.port.other_end }}
+interface {{0+p.port.name|int}}
+ {%- if p.untagged %}
+ switchport hybrid pvid {{ p.untagged.vlan }}
+  {%- if not p.tagged %}
+ switchport hybrid ingress-filtering
+ switchport hybrid acceptable-frame-type untagged-only
+  {%- endif %}
+ switchport hybrid allowed vlan add {{ p.untagged.vlan }} untagged
+ {%- endif %}
+ {%- if p.tagged %}
+  {%- if not p.untagged %}
+ switchport hybrid ingress-filtering
+ switchport hybrid acceptable-frame-type tagged-only
+  {%- endif %}
+  {%- for v in p.tagged %}
+ switchport hybrid allowed vlan add {{ v.vlan }} tagged
+  {%- endfor %}
+ {%- endif %}
+ {%- for v in p.blocked %}
+ switchport forbidden vlan add {{ v.vlan }}
+ {%- endfor %}
+ {%- for v in p.single %}
+! only here: VLAN {{ v.vlan }}
+ {%- endfor %}
+
+{% endfor %}

@@ -1,9 +1,9 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 LONG_DESC = open("README.rst").read()
 
 setup(
-    name="distinv",
+    name="distkv_inv",
     use_scm_version={"version_scheme": "guess-next-dev", "local_scheme": "dirty-tag"},
     description="Inventory management for DistKV",
     url="https://github.com/smurfix/distinv",
@@ -13,7 +13,7 @@ setup(
     license="MIT -or- Apache License 2.0",
     packages=["distkv_ext.inv"],
     setup_requires=["setuptools_scm", "pytest-runner", "trustme >= 0.5"],
-    install_requires=["distkv >= 0.40"],
+    install_requires=["distkv >= 0.50"],
     tests_require=["trustme >= 0.5", "pytest", "flake8 >= 3.7"],
     keywords=["async", "key-values", "distributed"],
     python_requires=">=3.7",

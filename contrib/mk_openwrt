@@ -1,0 +1,23 @@
+#!/bin/bash
+
+set -ex
+set -o pipefail
+
+KV=$(pwd)/../../distkv/kv
+
+if test $# -ne 3 ; then
+    echo "Usage: $0 host srcdir destdir" >&2
+    exit 1
+fi
+
+H=$1
+S="$2"
+D="$3"
+
+mkdir "$D"
+
+(cd "$S"; find . -type d -mindepth 1 -print0) | (cd "$D"; xargs -0r mkdir )
+(cd "$S"; find . -type f) | while read f ; do
+    $KV client inv host $H template "$S/$f" > "$D/$f"
+done
+

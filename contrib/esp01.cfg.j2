@@ -1,0 +1,54 @@
+substitutions:
+  name: {{ hostname | replace("-","_") }}
+esphome:
+  name: ${name}
+  platform: ESP8266
+  board: esp01_1m
+switch:
+- platform: gpio
+  name: "${name} LED"
+  id: ${name}_led
+  pin: 1
+- platform: gpio
+  name: "${name} relay"
+  id: ${name}_relay
+  pin: 3
+binary_sensor:
+- platform: gpio
+  name: "${name} button"
+  id: ${name}_button
+  pin: 2
+- platform: status
+  name: "${name} status"
+wifi:
+  ssid: {{host.network.wlan}}
+  password: {{host.network.passwd}}
+  id: ${name}
+  manual_ip:
+    static_ip: {{host.netaddr.ip}}
+    gateway: {{host.netaddr.network+1}}
+    subnet: {{host.netaddr.netmask}}
+    dns1: 10.107.8.130
+mqtt:
+  broker: 10.107.3.2
+  port: 51883
+  discovery_retain: false
+  discovery_prefix: home/ass/dyn
+  topic_prefix: home/ass/dyn
+  log_topic:
+    topic: home/log/${name}
+    retain: false
+  birth_message:
+    topic: test/state/${name}
+    payload: "ON"
+    retain: false
+  will_message:
+    topic: test/state/${name}
+    payload: "OFF"
+    retain: false
+ota:
+  safe_mode: True
+  password: !secret ota_password
+logger:
+  level: NONE
+  hardware_uart: UART0_SWAP

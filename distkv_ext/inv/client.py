@@ -1,11 +1,15 @@
 # command line interface
 
+import os
+import sys
+
 import asyncclick as click
 from collections import deque
 from netaddr import IPNetwork, EUI, IPAddress, AddrFormatError
 from operator import attrgetter
 
-from distkv.util import data_get, P
+from distkv.util import P, attrdict
+from distkv.data import data_get
 from distkv_ext.inv.model import InventoryRoot, Host, Wire
 
 import logging
@@ -13,7 +17,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-@main.group(short_help="Manage computer inventory.")  # pylint: disable=undefined-variable
+@click.group(short_help="Manage computer inventory.")
 @click.pass_obj
 async def cli(obj):
     """
@@ -102,7 +106,9 @@ def inv_sub(*a, **kw):
                 if v is not None:
                     if isinstance(v, dict):
                         v = v.items()
-                    if isinstance(v, type({}.items())):
+                    if isinstance(
+                        v, type({}.items())
+                    ):  # pylint: disable=isinstance-second-argument-not-valid-type
                         for kk, vv in sorted(v):
                             if isinstance(vv, (tuple, list)):
                                 if vv:
@@ -192,7 +198,7 @@ def inv_sub(*a, **kw):
                     setattr(obj, k, v)
                 except AttributeError:
                     if k != "name":
-                        raise AttributeError(k, v)
+                        raise AttributeError(k, v) from None
         await obj.save()
 
     for t, kv in tinv.ext:
@@ -208,8 +214,7 @@ def inv_sub(*a, **kw):
 @click.argument("path", nargs=1)
 @click.pass_obj
 async def dump(obj, path):
-    """Emit the current state as a YAML file.
-    """
+    """Emit the current state as a YAML file."""
     path = P(path)
     await data_get(obj, obj.cfg.inv.prefix + path)
 
@@ -218,7 +223,11 @@ inv_sub(
     "vlan",
     "id",
     int,
-    aux=(click.option("-d", "--desc", type=str, default=None, help="Description"),),
+    aux=(
+        click.option("-d", "--desc", type=str, default=None, help="Description"),
+        click.option("-w", "--wlan", type=str, default=None, help="WLAN SSID"),
+        click.option("-p", "--passwd", type=str, default=None, help="WLAN pasword"),
+    ),
     short_help="Manage VLANs",
 )
 
@@ -247,7 +256,7 @@ def host_post(ctx, values):
             try:
                 na = IPAddress(net)
             except AddrFormatError:
-                raise click.exceptions.UsageError("no such network: " + repr(net))
+                raise click.exceptions.UsageError("malformed network: " + repr(net)) from None
             n = ctx.inv.net.enclosing(na)
             if n is None:
                 raise RuntimeError("Network unknown", net)
@@ -364,6 +373,7 @@ async def host_port(ctx, name):
         if ctx.invoked_subcommand is not None:
             raise click.BadParameter("The name '-' triggers a list and precludes subcommands.")
         for k, v in h.ports.items():
+            p = h._ports[k]
             print(k, v)
     elif ctx.invoked_subcommand is None:
         p = h.port[name]
@@ -374,6 +384,87 @@ async def host_port(ctx, name):
     else:
         obj.thing_port = name
         pass  # click invokes the subcommand for us.
+
+
+# @host.command(name="template", short_help="apply template")  # added later
+@click.argument("template", type=click.Path("r"), nargs=1)
+@click.pass_obj
+async def host_template(obj, template):
+    """\
+        Load a template, for generating a host configuration file.
+        """
+    import jinja2
+
+    e = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(os.path.dirname(template)), autoescape=False
+    )
+    t = e.get_template(os.path.basename(template))
+    h = obj.inv.host.by_name(obj.thing_name)
+
+    nport = {}
+    ports = {}
+    one = None
+    none = None
+
+    for vl in obj.inv.vlan.all_children:
+        if vl.vlan == 1:
+            one = vl
+        elif vl.name == "init":
+            none = vl
+        nport[vl] = 0
+
+    for p in h._ports.values():
+        ports[p.name] = pn = attrdict(
+            port=p, untagged=None, tagged=set(), blocked=set(nport.keys()), single=set()
+        )
+        if pn.port.network is None:
+            continue
+
+        a3 = (pn.port.network.net.value >> 8) & 0xFF
+        a4 = pn.port.network.net.value & 0xFF
+        nv = pn.port.netaddr.value & ~pn.port.netaddr.netmask.value
+
+        pn.net6 = IPNetwork("2001:780:107:{net3:02x}{net4:02x}::1/64".format(net3=a3, net4=a4))
+        pn.ip6 = IPNetwork(
+            "2001:780:107:{net3:02x}{net4:02x}::{adr:x}/64".format(net3=a3, net4=a4, adr=nv)
+        )
+
+    for d in ports.values():
+        va = d.port.vlan
+        vb = d.port.other_end.vlan if d.port.other_end else None
+        if va is None:
+            va = vb
+        elif vb is not None and va != vb:
+            print(f"Warning! inconsistent VLANs on port {d.port}", file=sys.stderr)
+
+        vs = await d.port.connected_vlans()
+        for vl in vs:
+            nport[vl] += 1
+            d.tagged.add(vl)
+            d.blocked.remove(vl)
+        if va:
+            d.untagged = va
+            d.blocked.discard(va)
+            d.tagged.discard(va)
+        elif not d.tagged:  # port empty
+            nport[none] += 1
+            d.untagged = none
+            d.blocked.discard(none)
+
+    vl_one = set(k for k, v in nport.items() if v <= 1)
+
+    for d in ports.values():
+        if len(d.tagged) == 1 and not d.untagged:
+            d.untagged = d.tagged.pop()
+        else:
+            if one in d.tagged:
+                d.untagged = one
+                d.tagged.discard(one)
+            d.single = vl_one & d.tagged
+            d.tagged -= vl_one
+            d.blocked |= vl_one
+    data = dict(host=h, vlans=nport, ports=list(ports.values()))
+    print(t.render(**data))
 
 
 # @host.command(name="find", short_help="Show the path to another host")  # added later
@@ -391,6 +482,8 @@ async def host_find(obj, dest):
     todo.append((h, ()))
 
     def work():
+        # Enumerate all connected hosts.
+        # Wires are duck-typed as hosts with two ports.
         while todo:
             w, wp = todo.popleft()
             wx = w
@@ -419,24 +512,28 @@ async def host_find(obj, dest):
                 hx = hp
             else:
                 hx = hp.host
-            if hx.name == dest:
-                pr = []
-                px = None
-                for pp in p:
-                    if getattr(pp, "host", None) is getattr(px, "host", False) and isinstance(
-                        pp.host, Wire
-                    ):
-                        pr.append(pp.host)
-                        px = None
-                    else:
-                        if px is not None:
-                            pr.append(px)
-                        px = pp
+            if hx.name != dest:
+                continue
 
-                if px is not None:
-                    pr.append(px)
-                print(*(p.name if isinstance(p, Wire) else p for p in pr))
-                break
+            pr = []
+            px = None
+            # For routes through hosts, we print both host+port names.
+            # For wires, only the single wire name is interesting.
+            for pp in p:
+                if getattr(pp, "host", None) is getattr(px, "host", False) and isinstance(
+                    pp.host, Wire
+                ):
+                    pr.append(pp.host)
+                    px = None
+                else:
+                    if px is not None:
+                        pr.append(px)
+                    px = pp
+
+            if px is not None:
+                pr.append(px)
+            print(*(p.name if isinstance(p, Wire) else p for p in pr))
+            break
 
 
 # @wire.command -- added later
@@ -499,6 +596,7 @@ inv_sub(
             },
         ),
         ("host_find", {"name": "find", "short_help": "Show the path to another host"}),
+        ("host_template", {"name": "template", "short_help": "Create config using this template"}),
     ),
     postproc=host_post,
     short_help="Manage hosts",
@@ -583,7 +681,7 @@ async def _hp_mod(obj, p, **kw):
             try:
                 na = IPAddress(net)
             except AddrFormatError:
-                raise click.exceptions.UsageError("no such network: " + repr(net))
+                raise click.exceptions.UsageError("malformed network: " + repr(net)) from None
             n = p.host.root.net.enclosing(na)
             if n is None:
                 raise RuntimeError("Network unknown", net)

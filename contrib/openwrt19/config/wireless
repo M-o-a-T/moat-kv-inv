@@ -1,0 +1,51 @@
+
+config wifi-device 'radio5'
+	option type 'mac80211'
+	option hwmode '11a'
+	option path 'pci0000:00/0000:00:00.0'
+	option htmode 'VHT80'
+	option channel 'auto'
+
+config wifi-device 'radio2'
+	option type 'mac80211'
+	option hwmode '11g'
+	option path 'platform/ahb/18100000.wmac'
+	option htmode 'HT40'
+	option channel 'auto'
+
+{%- for v in vlans %}
+{%- if v.wlan %}
+{%- set n=v.name.replace("_air","") %}
+
+config wifi-iface '{{n}}_5'
+	option device 'radio5'
+	option ifname '{{n}}_5'
+	option mode 'ap'
+	option network '{{v.name}} neu'
+	option ssid '{{v.wlan}}'
+	{%- if v.passwd %}
+	option encryption 'none'
+	option isolate '1'
+	{%- else %}
+	option encryption 'psk2'
+	option key '{{ v.passwd }}'
+	option isolate '0'
+	{%- endif %}
+
+config wifi-iface '{{n}}_2'
+	option device 'radio2'
+	option ifname '{{n}}_2'
+	option mode 'ap'
+	option network '{{v.name}}'
+	option ssid '{{v.wlan}}
+	{%- if v.passwd %}
+	option encryption 'none'
+	option isolate '1'
+	{%- else %}
+	option encryption 'psk2'
+	option isolate '0'
+	option key '{{ v.passwd }}'
+	{%- endif %}
+
+{%- endif %}
+{%- endfor %}

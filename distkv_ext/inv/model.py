@@ -126,9 +126,12 @@ class Vlan(Cleaner, SkipNone, AttrClientEntry):
         A single VLAN.
 
         Stored as ``inv vlan NUMBER``.
+
+        wlan: WLAN SSID
+        passwd: WLAN password
         """
 
-    ATTRS = ("desc", "name")
+    ATTRS = ("desc", "name", "passwd", "wlan")
     AUX_ATTRS = ("vlan",)
 
     name = None
@@ -235,6 +238,8 @@ class Network(Cleaner, SkipNone, AttrClientEntry):
     name = None
     vlan = None
     mac = False
+    wlan = None
+    passwd = None
     shift = 0
     dhcp = (1, 0)
     virt = False
@@ -525,13 +530,14 @@ class NetRoot(NamedMixin, ClientEntry):
 
 
 class HostPort(Cleaner):
-    ATTRS = ("desc", "mac")
+    ATTRS = ("desc", "mac", "force_vlan")
     ATTRS2 = ("net", "num")
     AUX_ATTRS = ("netaddr", "vlan", "link_to")
     desc = None
     net = None
     num = None
     mac = None
+    force_vlan = False
 
     def __init__(self, host, name, kv):
         self.host = host
@@ -551,6 +557,30 @@ class HostPort(Cleaner):
             self.mac = EUI(mm, len(m) * 16)
 
         self.attrs = attrdict(kv)
+
+    @property
+    def other_end(self):
+        """
+        Returns the host/port at the other end of a cable / cable run.
+
+        May also return an intermediate cable end if it dangles.
+        """
+        c = self.cable
+        if c is None:
+            return None
+
+        cc = c.other_end(self)
+        while isinstance(getattr(cc, "host", None), Wire):
+            cc = cc.host.other_end(cc)
+            cv = self.host.root.cable.cable_for(cc)
+            if cv is None:
+                return cc
+            cc = cv.other_end(cc)
+        return cc
+
+    @property
+    def cable(self):
+        return self.host.root.cable.cable_for(self)
 
     @property
     def netaddr(self):
@@ -593,6 +623,49 @@ class HostPort(Cleaner):
         else:
             self.attrs.pop("vlan", None)
 
+    async def _connected_vlans(self, seen):
+        if self in seen:
+            return
+        seen.add(self)
+        if self.attrs.get("vlan", None):
+            # If the port's vlan is hardcoded, use that
+            yield self.attrs.vlan
+            n = self.attrs.vlan + "-"
+            for pn, p in self.host._ports.items():
+                if pn.startswith(n) and "vlan" in p.attrs:
+                    yield p.attrs.vlan
+            return
+
+        if self.network and self.network.vlan:
+            yield self.network.vlan
+        h = self.other_end
+        h = getattr(h, "host", h)
+        if not isinstance(h, Host):
+            return
+        if h in seen:
+            return
+        seen.add(h)
+        if h.network and h.network.vlan:
+            yield h.network.vlan
+        for p in h._ports.values():
+            async for _v in p._connected_vlans(seen):
+                yield _v
+
+    async def connected_vlans(self):
+        """
+        Enumerate the VLANs to be connected to this port
+        """
+        seen = set()
+        vseen = set()
+        seen.add(self.host)
+        async for v in self._connected_vlans(seen):
+            n = self.host.root.vlan.by_name(v)
+            if n is None:
+                logger.error("VLAN %s does not exist, %s", v, self)
+                continue
+            vseen.add(n)
+        return vseen
+
     async def rename(self, name):
         h = self.host
         if name in h.port:
@@ -621,10 +694,6 @@ class HostPort(Cleaner):
         self.attrs.pop("vlan", None)
 
     @property
-    def cable(self):
-        return self.host.root.cable.cable_for(self)
-
-    @property
     def link_to(self):
         c = self.cable
         if c is None:
@@ -641,7 +710,7 @@ class HostPort(Cleaner):
             res["mac"] = res["mac"].packed
         return res
 
-    def set_value(self, _):  # pylint: disable=signature-differs
+    async def set_value(self, _):  # pylint: disable=signature-differs
         raise RuntimeError("This does not work.")
 
     def __repr__(self):
@@ -1013,8 +1082,8 @@ class CableRoot(ClientEntry):
 
     async def _add_cable(self, cable):
         """
-            Add this link to the cache
-            """
+        Add this link to the cache
+        """
 
         def aa(dest):
             h, p = self._hp(dest)
@@ -1039,8 +1108,8 @@ class CableRoot(ClientEntry):
 
     def _del__cable(self, cable, dest):
         """
-            Drop this link from the cache
-            """
+        Drop this link from the cache
+        """
         dest = dest()
         if dest is None:
             return
@@ -1076,6 +1145,10 @@ class Cable(Cleaner, AttrClientEntry):
     dest_b = None
     _dest_a = None
     _dest_b = None
+
+    @property
+    def vlan(self):
+        return None
 
     @property
     def _ppar(self):
@@ -1164,15 +1237,15 @@ class Cable(Cleaner, AttrClientEntry):
 
         def wr(dest):
             if hasattr(dest, "subpath"):
-                return (dest.subpath,)
-            return (dest.host.subpath, dest.name)
+                return (Path.build(dest.subpath),)
+            return (Path.build(dest.host.subpath), dest.name)
 
         val["a"] = wr(self.dest_a)
         val["b"] = wr(self.dest_b)
 
         return val
 
-    async def __contains__(self, dest):
+    def __contains__(self, dest):
         if self.dest_a is dest:
             return True
         if self.dest_b is dest:
@@ -1270,6 +1343,10 @@ class Wire(Cleaner, SkipNone, AttrClientEntry):
             raise KeyError("Duplicate name", self.name)
 
         return super().get_value()
+
+    @property
+    def vlan(self):
+        return None
 
     def __repr__(self):
         return "<Wire %s>" % (self.name,)

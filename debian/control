@@ -1,16 +1,16 @@
-Source: distinv
+Source: distkv-inv
 Maintainer: Matthias Urlichs <matthias@urlichs.de>
 Section: python
 Priority: optional
 Build-Depends: dh-python, python3-setuptools, python3-all, debhelper (>= 9),
-  distkv (>= 0.30),
+  distkv (>= 0.50),
 Standards-Version: 3.9.6
 Homepage: https://github.com/smurfix/distinv
 
 Package: distkv-inv
 Architecture: all
 Depends: ${misc:Depends}, ${python3:Depends},
-  distkv (>= 0.30),
+  distkv (>= 0.50),
 Replaces: python3-distinv
 Conflicts: python3-distinv
 Description: Inventory management for DistKV
