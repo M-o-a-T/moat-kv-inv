@@ -10,6 +10,7 @@ from operator import attrgetter
 
 from distkv.util import P, attrdict
 from distkv.data import data_get
+from distkv.obj.command import inv_sub
 from distkv_ext.inv.model import InventoryRoot, Host, Wire
 
 import logging
@@ -23,191 +24,7 @@ async def cli(obj):
     """
     Inventorize your computers, networks, and their connections.
     """
-    obj.inv = await InventoryRoot.as_handler(obj.client)
-
-
-class InvSub:
-    def __init__(
-        self,
-        name,
-        id_name=None,
-        id_typ=None,
-        aux=(),
-        name_cb=None,
-        id_cb=None,
-        postproc=None,
-        ext=(),
-        apply=None,
-        short_help=None,
-    ):
-        self.name = name
-        self.id_name = id_name
-        self.id_typ = id_typ
-        self.id_cb = id_cb or (lambda _c, _k, x: x)
-        self.apply = apply or (lambda _c, _x: None)
-        self.name_cb = name_cb or (lambda _c, _k, x: x)
-        self.aux = aux
-        self.ext = ext
-        self.short_help = short_help
-        self.postproc = postproc or (lambda _c, x: None)
-
-    def id_arg(self, proc):
-        if self.id_name is None:
-            return proc
-        return click.argument(self.id_name, type=self.id_typ, callback=self.id_cb, nargs=1)(proc)
-
-    def apply_aux(self, proc):
-        for t in self.aux:
-            proc = t(proc)
-        return proc
-
-
-def inv_sub(*a, **kw):
-    """
-    This procedure builds the interface for an inventory thing.
-    """
-    tinv = InvSub(*a, **kw)
-    tname = tinv.name
-
-    def this(obj):
-        # Delayed resolving of the actual thing subhierarchy
-        return getattr(obj.inv, tname)
-
-    @cli.group(
-        name=tname,
-        invoke_without_command=True,
-        short_help=tinv.short_help,
-        help="""\
-            Manager for {tname}s.
-
-            \b
-            Use '… {tname} -' to list all entries.
-            Use '… {tname} NAME' to show details of a single entry.
-            """.format(
-            tname=tname
-        ),
-    )
-    @click.argument("name", type=str, nargs=1)
-    @click.pass_context
-    async def typ(ctx, name):
-        obj = ctx.obj
-        if name == "-":
-            if ctx.invoked_subcommand is not None:
-                raise click.BadParameter("The name '-' triggers a list and precludes subcommands.")
-            for n in this(obj).all_children:
-                print(n)
-        elif ctx.invoked_subcommand is None:
-            # Show data from a single entry
-            n = this(obj).by_name(name)
-            if n is None:
-                raise KeyError(n)
-            for k in n.ATTRS + getattr(n, "AUX_ATTRS", ()):
-                v = getattr(n, k, None)
-                if v is not None:
-                    if isinstance(v, dict):
-                        v = v.items()
-                    if isinstance(
-                        v, type({}.items())
-                    ):  # pylint: disable=isinstance-second-argument-not-valid-type
-                        for kk, vv in sorted(v):
-                            if isinstance(vv, (tuple, list)):
-                                if vv:
-                                    vv = " ".join(str(x) for x in vv)
-                                else:
-                                    vv = "-"
-                            elif isinstance(vv, dict):
-                                vv = " ".join("%s=%s" % (x, y) for x, y in sorted(vv.items()))
-                            print("%s %s %s" % (k, kk, vv))
-                    else:
-                        print("%s %s" % (k, v))
-        else:
-            obj.thing_name = name
-            pass  # click invokes the subcommand for us.
-
-    def alloc(obj, name):
-        # Allocate a new thing
-        if isinstance(name, (tuple, list)):
-            n = this(obj).follow(name, create=True)
-        else:
-            n = this(obj).allocate(name)
-        return n
-
-    @typ.command(short_help="Add a " + tname)
-    @tinv.id_arg
-    @tinv.apply_aux
-    @click.pass_obj
-    async def add(obj, **kw):  # pylint: disable=unused-variable
-        name = obj.thing_name
-        if tinv.id_name:
-            kw["name"] = name
-            n = alloc(obj, kw.pop(tinv.id_name))
-        else:
-            n = alloc(obj, name)
-        tinv.postproc(obj, kw)
-
-        await _v_mod(n, **kw)
-
-    add.__doc__ = (
-        """
-        Add a %s
-        """
-        % tname
-    )
-
-    @typ.command("set", short_help="Modify a " + tname)
-    @tinv.apply_aux
-    @click.pass_obj
-    async def set_(obj, **kw):  # pylint: disable=unused-variable
-        name = obj.thing_name
-        n = this(obj).by_name(name)
-        if n is None:
-            raise KeyError(n)
-        tinv.postproc(obj, kw)
-
-        await _v_mod(n, **kw)
-
-    set_.__doc__ = (
-        """
-        Modify a %s
-        """
-        % tname
-    )
-
-    @typ.command(short_help="Delete a " + tname)
-    @click.pass_obj
-    async def delete(obj, **kw):  # pylint: disable=unused-argument,unused-variable
-        name = obj.thing_name
-        n = this(obj).by_name(name)
-        if n is not None:
-            await n.delete()
-
-    delete.__doc__ = (
-        """
-        Delete a %s
-        """
-        % tname
-    )
-
-    async def _v_mod(obj, **kw):
-        tinv.apply(obj, kw)
-        for k, v in kw.items():
-            if v:
-                if v == "-":
-                    v = None
-                try:
-                    setattr(obj, k, v)
-                except AttributeError:
-                    if k != "name":
-                        raise AttributeError(k, v) from None
-        await obj.save()
-
-    for t, kv in tinv.ext:
-        p = globals()[t]
-        if kv.pop("group", False):
-            p = typ.group(**kv)(p)
-        else:
-            p = typ.command(**kv)(p)
-        globals()[t] = p
+    obj.data = await InventoryRoot.as_handler(obj.client)
 
 
 @cli.command()
@@ -220,6 +37,7 @@ async def dump(obj, path):
 
 
 inv_sub(
+    cli,
     "vlan",
     "id",
     int,
@@ -247,17 +65,17 @@ def rev_wire(ctx, param, value):
     return rev_name(ctx, param, value, delim="-", rev=False)
 
 
-def host_post(ctx, values):
-    obj = ctx.inv.host.by_name(ctx.thing_name)
+def host_post(obj, values):
+    h = obj.host
     net = values.get("net", None)
     if net not in (None, "-"):
-        n = ctx.inv.net.by_name(net)
+        n = obj.data.net.by_name(net)
         if n is None:
             try:
                 na = IPAddress(net)
             except AddrFormatError:
                 raise click.exceptions.UsageError("malformed network: " + repr(net)) from None
-            n = ctx.inv.net.enclosing(na)
+            n = obj.data.net.enclosing(na)
             if n is None:
                 raise RuntimeError("Network unknown", net)
             if not values.get("num"):
@@ -271,10 +89,10 @@ def host_post(ctx, values):
     if values.pop("alloc", None):
         if values.get("num"):
             raise click.BadParameter("'num' and 'alloc' are mutually exclusive'", "alloc")
-        net = values.get("net", obj.net if obj else None)
+        net = values.get("net", h.net if h else None)
         if net is None:
             raise click.BadParameter("Need a network to allocate a number in")
-        values["num"] = ctx.inv.net.by_name(net).alloc()
+        values["num"] = obj.data.net.by_name(net).alloc()
 
 
 def get_net(ctx, attr, val):  # pylint: disable=unused-argument
@@ -286,7 +104,7 @@ def get_net(ctx, attr, val):  # pylint: disable=unused-argument
 def get_net_name(ctx, attr, val):  # pylint: disable=unused-argument
     if val is None:
         return None
-    n = ctx.obj.inv.net.by_name(val)
+    n = ctx.obj.data.net.by_name(val)
     if n is None:
         return KeyError(val)
     return n
@@ -328,6 +146,7 @@ def net_apply(obj, kw):
 
 
 inv_sub(
+    cli,
     "net",
     "net",
     str,
@@ -368,19 +187,19 @@ async def host_port(ctx, name):
         """
 
     obj = ctx.obj
-    obj.host = h = obj.inv.host.by_name(obj.thing_name)
+    h = obj.host
     if name == "-":
         if ctx.invoked_subcommand is not None:
             raise click.BadParameter("The name '-' triggers a list and precludes subcommands.")
         for k, v in h.ports.items():
             p = h._ports[k]
-            print(k, v)
+            print(k, v, file=obj.stdout)
     elif ctx.invoked_subcommand is None:
         p = h.port[name]
         for k in p.ATTRS + p.AUX_ATTRS + p.ATTRS2:
             v = getattr(p, k)
             if v is not None:
-                print(k, v)
+                print(k, v, file=obj.stdout)
     else:
         obj.thing_port = name
         pass  # click invokes the subcommand for us.
@@ -399,14 +218,14 @@ async def host_template(obj, template):
         loader=jinja2.FileSystemLoader(os.path.dirname(template)), autoescape=False
     )
     t = e.get_template(os.path.basename(template))
-    h = obj.inv.host.by_name(obj.thing_name)
+    h = obj.data.host.by_name(obj.thing_name)
 
     nport = {}
     ports = {}
     one = None
     none = None
 
-    for vl in obj.inv.vlan.all_children:
+    for vl in obj.data.vlan.all_children:
         if vl.vlan == 1:
             one = vl
         elif vl.name == "init":
@@ -464,7 +283,7 @@ async def host_template(obj, template):
             d.tagged -= vl_one
             d.blocked |= vl_one
     data = dict(host=h, vlans=nport, ports=list(ports.values()))
-    print(t.render(**data))
+    print(t.render(**data), file=obj.stdout)
 
 
 # @host.command(name="find", short_help="Show the path to another host")  # added later
@@ -477,7 +296,7 @@ async def host_find(obj, dest):
         A destination of '-' lists all unreachable hosts.
         """
     seen = set()
-    h = obj.inv.host.by_name(obj.thing_name)
+    h = obj.data.host.by_name(obj.thing_name)
     todo = deque()
     todo.append((h, ()))
 
@@ -503,9 +322,9 @@ async def host_find(obj, dest):
     if dest == "-":
         for hp, _ in work():
             pass
-        for hp in obj.inv.host.all_children:
+        for hp in obj.data.host.all_children:
             if hp not in seen:
-                print(hp)
+                print(hp, file=obj.stdout)
     else:
         for hp, p in work():
             if isinstance(hp, Host):
@@ -532,7 +351,7 @@ async def host_find(obj, dest):
 
             if px is not None:
                 pr.append(px)
-            print(*(p.name if isinstance(p, Wire) else p for p in pr))
+            print(*(p.name if isinstance(p, Wire) else p for p in pr), file=obj.stdout)
             break
 
 
@@ -550,16 +369,16 @@ async def wire_link(obj, dest, a_ends, force):
         If you need to connect the wire to a port, use this command there.
         """
 
-    w = obj.inv.wire.by_name(obj.thing_name)
+    w = obj.data.wire.by_name(obj.thing_name)
     if len(dest) > 1:
         raise click.BadParameter("Too many destination parameters")
     if not dest:
-        print(obj.inv.cable.cable_for(w))
+        print(obj.data.cable.cable_for(w), file=obj.stdout)
         return
     if dest[0] == "-":
-        await obj.inv.cable.unlink(w)
+        await obj.data.cable.unlink(w)
     else:
-        d = obj.inv.wire.by_name(dest[0])
+        d = obj.data.wire.by_name(dest[0])
         if d is None:
             raise KeyError(dest)
         if a_ends:
@@ -568,10 +387,11 @@ async def wire_link(obj, dest, a_ends, force):
         else:
             w = w.port["b"]
             d = d.port["b"]
-        await obj.inv.cable.link(w, d, force=force)
+        await obj.data.cable.link(w, d, force=force)
 
 
 inv_sub(
+    cli,
     "host",
     "domain",
     str,
@@ -587,7 +407,7 @@ inv_sub(
     ),
     ext=(
         (
-            "host_port",
+            host_port,
             {
                 "name": "port",
                 "group": True,
@@ -595,16 +415,17 @@ inv_sub(
                 "invoke_without_command": True,
             },
         ),
-        ("host_find", {"name": "find", "short_help": "Show the path to another host"}),
-        ("host_template", {"name": "template", "short_help": "Create config using this template"}),
+        (host_find, {"name": "find", "short_help": "Show the path to another host"}),
+        (host_template, {"name": "template", "short_help": "Create config using this template"}),
     ),
     postproc=host_post,
     short_help="Manage hosts",
 )
 
-inv_sub("group", short_help="Manage host config groups")
+inv_sub(cli, "group", short_help="Manage host config groups")
 
 inv_sub(
+    cli,
     "wire",
     name_cb=rev_wire,
     short_help="Manage wire links",
@@ -612,7 +433,7 @@ inv_sub(
         click.option("-d", "--desc", type=str, default=None, help="Description"),
         click.option("-l", "--loc", type=str, default=None, help="Location"),
     ),
-    ext=(("wire_link", {"name": "link", "short_help": "Link two wires"}),),
+    ext=((wire_link, {"name": "link", "short_help": "Link two wires"}),),
 )
 
 
@@ -624,8 +445,8 @@ async def cable(ctx):
     """
     if ctx.invoked_subcommand is not None:
         return
-    for c in ctx.obj.inv.cable.all_children:
-        print(c)
+    for c in ctx.obj.data.cable.all_children:
+        print(c, file=obj.stdout)
 
 
 def _hp_args(p):
@@ -708,7 +529,7 @@ async def _hp_mod(obj, p, **kw):
             setattr(p, k, None)
             continue
         if k == "vlan":
-            if obj.inv.vlan.by_name(v) is None:
+            if obj.data.vlan.by_name(v) is None:
                 raise click.BadParameter("VLAN does not exist")
         setattr(p, k, v)
 
@@ -743,12 +564,12 @@ async def hp_link(obj, dest, a_end, b_end, force):
     except KeyError:
         raise click.BadParameter("Unknown port %r" % (port,)) from None
     if not dest:
-        print(obj.inv.cable.cable_for(p))
+        print(obj.data.cable.cable_for(p), file=obj.stdout)
         return
     if dest[0] == "-":
-        await obj.inv.cable.unlink(p)
+        await obj.data.cable.unlink(p)
     else:
-        d = attrgetter("wire" if a_end or b_end else "host")(obj.inv).by_name(dest[0])
+        d = attrgetter("wire" if a_end or b_end else "host")(obj.data).by_name(dest[0])
         if d is None:
             raise KeyError(dest)
         if a_end:
@@ -757,4 +578,4 @@ async def hp_link(obj, dest, a_end, b_end, force):
             d = d.port["b"]
         elif len(dest) > 1:
             d = d.port[dest[1]]
-        await obj.inv.cable.link(p, d, force=force)
+        await obj.data.cable.link(p, d, force=force)

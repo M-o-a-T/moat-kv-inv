@@ -3,8 +3,8 @@ DistKV client data model for Inventory
 """
 import struct
 
-from distkv.obj import ClientEntry, ClientRoot, AttrClientEntry
-from distkv.util import NotGiven, attrdict, Path
+from distkv.obj import ClientEntry, ClientRoot, AttrClientEntry, NamedRoot
+from distkv.util import NotGiven, attrdict, Path, yaml_named
 from distkv.errors import ErrorRoot
 from operator import attrgetter
 from collections import deque
@@ -16,34 +16,6 @@ from netaddr import IPNetwork, EUI, IPAddress, AddrFormatError
 import logging
 
 logger = logging.getLogger("distkv_ext.inv.model")
-
-
-class NamedMixin:
-    def __init__(self, *a, **k):
-        self.__named = {}
-        super().__init__(*a, **k)
-
-    def by_name(self, name):
-        if name is None:
-            return None
-        if not isinstance(name, str):
-            raise ValueError("No string: " + repr(name))
-        return self.__named.get(name)
-
-    def _add_name(self, obj):
-        n = obj.name
-        if n is None:
-            return
-
-        self.__named[n] = obj
-        obj.reg_del(self, "_del__name", obj, n)
-
-    def _del__name(self, obj, n):
-        old = self.__named.pop(n)
-        if old is None or old is obj:
-            return
-        # Oops, that has been superseded. Put it back.
-        self.__named[n] = old
 
 
 class SkipNone:
@@ -121,6 +93,7 @@ class InventoryRoot(ClientRoot):
         return self.cable.cable_for(*a, **k)
 
 
+@yaml_named("vlan")
 class Vlan(Cleaner, SkipNone, AttrClientEntry):
     """\
         A single VLAN.
@@ -186,7 +159,7 @@ class Vlan(Cleaner, SkipNone, AttrClientEntry):
 
 
 @InventoryRoot.register("vlan")
-class VlanRoot(NamedMixin, ClientEntry):
+class VlanRoot(NamedRoot, ClientEntry):
     """\
         Manage VLANs.
         """
@@ -210,6 +183,7 @@ class VlanRoot(NamedMixin, ClientEntry):
         raise ValueError("No values here!")
 
 
+@yaml_named("net")
 class Network(Cleaner, SkipNone, AttrClientEntry):
     """\
         Manage a network.
@@ -461,7 +435,7 @@ class NetRootB(ClientEntry):
 
 
 @InventoryRoot.register("net")
-class NetRoot(NamedMixin, ClientEntry):
+class NetRoot(NamedRoot, ClientEntry):
     """\
         Manage networks.
         """
@@ -529,6 +503,7 @@ class NetRoot(NamedMixin, ClientEntry):
         raise ValueError("No values here!")
 
 
+@yaml_named("port")
 class HostPort(Cleaner):
     ATTRS = ("desc", "mac", "force_vlan")
     ATTRS2 = ("net", "num")
@@ -720,6 +695,7 @@ class HostPort(Cleaner):
         return "%s:%s" % (self.host.name, self.name)
 
 
+@yaml_named("host")
 class Host(Cleaner, SkipNone, AttrClientEntry):
     ATTRS = ("name", "net", "mac", "num", "desc", "loc", "groups")
     AUX_ATTRS = ("ports", "domain", "cable", "netaddr")
@@ -963,7 +939,7 @@ class Host(Cleaner, SkipNone, AttrClientEntry):
 
 
 @InventoryRoot.register("host")
-class HostRoot(NamedMixin, ClientEntry):
+class HostRoot(NamedRoot, ClientEntry):
     def __init__(self, *a, **k):
         self._hosts = {}
         super().__init__(*a, **k)
@@ -1138,6 +1114,7 @@ class CableRootB(ClientEntry):
         raise ValueError("No values here!")
 
 
+@yaml_named("cable")
 class Cable(Cleaner, AttrClientEntry):
     ATTRS = ()
 
@@ -1281,6 +1258,7 @@ class Cable(Cleaner, AttrClientEntry):
         return "%s %s" % (a, b)
 
 
+@yaml_named("wire")
 class Wire(Cleaner, SkipNone, AttrClientEntry):
     ATTRS = ("loc", "desc")
     AUX_ATTRS = ("ports",)
@@ -1363,7 +1341,7 @@ class Wire(Cleaner, SkipNone, AttrClientEntry):
 
 
 @InventoryRoot.register("wire")
-class WireRoot(NamedMixin, ClientEntry):
+class WireRoot(NamedRoot, ClientEntry):
     def __init__(self, *a, **k):
         self._hosts = {}
         super().__init__(*a, **k)
