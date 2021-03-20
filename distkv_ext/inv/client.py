@@ -174,7 +174,29 @@ inv_sub(
 )
 
 
-# @host.group -- added later
+
+cmd_host = inv_sub(
+    cli,
+    "host",
+    "domain",
+    str,
+    id_cb=rev_name,
+    aux=(
+        click.option("-d", "--desc", type=str, default=None, help="Description"),
+        click.option("-l", "--loc", type=str, default=None, help="Location"),
+        click.option("-n", "--net", type=str, default=None, help="Network", callback=get_net),
+        click.option("-N", "--name", type=str, default=None, help="Name (not when adding)"),
+        click.option("-m", "--mac", type=str, default=None, help="MAC", callback=get_mac),
+        click.option("-i", "--num", type=int, default=None, help="Position in network"),
+        click.option("-a", "--alloc", is_flag=True, default=None, help="Auto-allocate network ID"),
+    ),
+    postproc=host_post,
+    short_help="Manage hosts",
+)
+
+
+@cmd_host.group(name="port", short_help="Manage ports",
+                invoke_without_command=True)
 @click.argument("name", type=str, nargs=1)
 @click.pass_context
 async def host_port(ctx, name):
@@ -205,12 +227,20 @@ async def host_port(ctx, name):
         pass  # click invokes the subcommand for us.
 
 
-# @host.command(name="template", short_help="apply template")  # added later
+@cmd_host.command(name="template", short_help="Create config file using a template")
 @click.argument("template", type=click.Path("r"), nargs=1)
 @click.pass_obj
 async def host_template(obj, template):
     """\
         Load a template, for generating a host configuration file.
+
+        The template is interpreted with jinja2.
+
+        \b
+        Variables:
+            host   this host
+            ports  a list of the host's ports
+            vlans  the VLANs attached to this host
         """
     import jinja2
 
@@ -286,7 +316,7 @@ async def host_template(obj, template):
     print(t.render(**data), file=obj.stdout)
 
 
-# @host.command(name="find", short_help="Show the path to another host")  # added later
+@cmd_host.command(name="find", short_help="Show the path to another host")
 @click.argument("dest", type=str, nargs=1)
 @click.pass_obj
 async def host_find(obj, dest):
@@ -354,8 +384,20 @@ async def host_find(obj, dest):
             print(*(p.name if isinstance(p, Wire) else p for p in pr), file=obj.stdout)
             break
 
+inv_sub(cli, "group", short_help="Manage host config groups")
 
-# @wire.command -- added later
+cmd_wire = inv_sub(
+    cli,
+    "wire",
+    name_cb=rev_wire,
+    short_help="Manage wire links",
+    aux=(
+        click.option("-d", "--desc", type=str, default=None, help="Description"),
+        click.option("-l", "--loc", type=str, default=None, help="Location"),
+    ),
+)
+
+@cmd_wire.command(name="link", short_help="Link two wires")
 @click.argument("dest", type=str, nargs=-1)
 @click.option("-A", "--a-ends", is_flag=True, help="Link the A ends")
 @click.option("-f", "--force", is_flag=True, help="Replace existing cables")
@@ -389,52 +431,6 @@ async def wire_link(obj, dest, a_ends, force):
             d = d.port["b"]
         await obj.data.cable.link(w, d, force=force)
 
-
-inv_sub(
-    cli,
-    "host",
-    "domain",
-    str,
-    id_cb=rev_name,
-    aux=(
-        click.option("-d", "--desc", type=str, default=None, help="Description"),
-        click.option("-l", "--loc", type=str, default=None, help="Location"),
-        click.option("-n", "--net", type=str, default=None, help="Network", callback=get_net),
-        click.option("-N", "--name", type=str, default=None, help="Name (not when adding)"),
-        click.option("-m", "--mac", type=str, default=None, help="MAC", callback=get_mac),
-        click.option("-i", "--num", type=int, default=None, help="Position in network"),
-        click.option("-a", "--alloc", is_flag=True, default=None, help="Auto-allocate network ID"),
-    ),
-    ext=(
-        (
-            host_port,
-            {
-                "name": "port",
-                "group": True,
-                "short_help": "Manage ports",
-                "invoke_without_command": True,
-            },
-        ),
-        (host_find, {"name": "find", "short_help": "Show the path to another host"}),
-        (host_template, {"name": "template", "short_help": "Create config using this template"}),
-    ),
-    postproc=host_post,
-    short_help="Manage hosts",
-)
-
-inv_sub(cli, "group", short_help="Manage host config groups")
-
-inv_sub(
-    cli,
-    "wire",
-    name_cb=rev_wire,
-    short_help="Manage wire links",
-    aux=(
-        click.option("-d", "--desc", type=str, default=None, help="Description"),
-        click.option("-l", "--loc", type=str, default=None, help="Location"),
-    ),
-    ext=((wire_link, {"name": "link", "short_help": "Link two wires"}),),
-)
 
 
 @cli.command(short_help="Manage cables")
