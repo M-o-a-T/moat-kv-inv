@@ -13,7 +13,7 @@ setup(
     license="MIT -or- Apache License 2.0",
     packages=["distkv_ext.inv"],
     setup_requires=["setuptools_scm", "pytest-runner", "trustme >= 0.5"],
-    install_requires=["distkv >= 0.55","netifaces"],
+    install_requires=["distkv >= 0.56","netifaces"],
     tests_require=["trustme >= 0.5", "pytest", "flake8 >= 3.7"],
     keywords=["async", "key-values", "distributed"],
     python_requires=">=3.7",
