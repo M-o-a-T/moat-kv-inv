@@ -10,7 +10,7 @@ from operator import attrgetter
 
 from distkv.util import P, attrdict
 from distkv.data import data_get
-from distkv.obj.command import inv_sub
+from distkv.obj.command import std_command
 from distkv_ext.inv.model import InventoryRoot, Host, Wire
 
 import logging
@@ -36,7 +36,7 @@ async def dump(obj, path):
     await data_get(obj, obj.cfg.inv.prefix + path)
 
 
-inv_sub(
+std_command(
     cli,
     "vlan",
     "id",
@@ -88,7 +88,7 @@ def host_post(obj, h, values):
     if values.pop("alloc", None):
         if values.get("num"):
             raise click.BadParameter("'num' and 'alloc' are mutually exclusive'", "alloc")
-        net = values.get("net", h.net if h else None)
+        net = values.get("net", None) or (h.net if h else None)
         if net is None:
             raise click.BadParameter("Need a network to allocate a number in")
         values["num"] = obj.data.net.by_name(net).alloc()
@@ -120,31 +120,31 @@ def get_mac(ctx, attr, val):  # pylint: disable=unused-argument
     return EUI(val)
 
 
-def net_apply(obj, kw):
+def net_apply(obj, n, kw):
     seen = 0
     val = kw.pop("virt", None)
     if val is not None:
-        obj.virt = val
+        n.virt = val
     if kw.pop("mac"):
-        obj.mac = True
+        n.mac = True
         seen += 1
     if kw.pop("no_mac"):
-        obj.mac = False
+        n.mac = False
         seen += 1
     if kw.pop("both_mac"):
-        obj.mac = None
+        n.mac = None
         seen += 1
     if seen > 1:
         raise click.UsageError("Only one of -m/-M/-B please.")
-    if obj.mac is True:
+    if n.mac is True:
         if kw["shift"] > 0:
             raise click.UsageError("You need to actually use the hostnum in order to shift it")
-        obj.shift = -1
-    elif obj.shift < 0:
-        obj.shift = 0
+        n.shift = -1
+    elif n.shift < 0:
+        n.shift = 0
 
 
-inv_sub(
+std_command(
     cli,
     "net",
     "net",
@@ -174,7 +174,7 @@ inv_sub(
 
 
 
-cmd_host = inv_sub(
+cmd_host = std_command(
     cli,
     "host",
     "domain",
@@ -189,8 +189,9 @@ cmd_host = inv_sub(
         click.option("-i", "--num", type=int, default=None, help="Position in network"),
         click.option("-a", "--alloc", is_flag=True, default=None, help="Auto-allocate network ID"),
     ),
-    postproc=host_post,
+    apply=host_post,
     short_help="Manage hosts",
+    list_recursive=True,
 )
 
 
@@ -247,7 +248,7 @@ async def host_template(obj, template):
         loader=jinja2.FileSystemLoader(os.path.dirname(template)), autoescape=False
     )
     t = e.get_template(os.path.basename(template))
-    h = obj.data.host.by_name(obj.thing_name)
+    h = obj.host
 
     nport = {}
     ports = {}
@@ -383,9 +384,9 @@ async def host_find(obj, dest):
             print(*(p.name if isinstance(p, Wire) else p for p in pr), file=obj.stdout)
             break
 
-inv_sub(cli, "group", short_help="Manage host config groups")
+std_command(cli, "group", short_help="Manage host config groups")
 
-cmd_wire = inv_sub(
+cmd_wire = std_command(
     cli,
     "wire",
     name_cb=rev_wire,
@@ -410,7 +411,7 @@ async def wire_link(obj, dest, a_ends, force):
         If you need to connect the wire to a port, use this command there.
         """
 
-    w = obj.data.wire.by_name(obj.thing_name)
+    w = obj.wire
     if len(dest) > 1:
         raise click.BadParameter("Too many destination parameters")
     if not dest:
@@ -512,7 +513,7 @@ async def _hp_mod(obj, p, **kw):
     if kw.pop("alloc", None):
         if kw.get("num"):
             raise click.BadParameter("'num' and 'alloc' are mutually exclusive'", "alloc")
-        net = kw.get("net", p.net if p else None)
+        net = kw.get("net", None) or (p.net if p else None)
         if net is None:
             raise click.BadParameter("Need a network to allocate a number in")
         kw["num"] = obj.host.root.net.by_name(net).alloc()

@@ -213,7 +213,6 @@ class Network(Cleaner, SkipNone, AttrClientEntry):
     vlan = None
     mac = False
     wlan = None
-    passwd = None
     shift = 0
     dhcp = (1, 0)
     virt = False
@@ -258,6 +257,15 @@ class Network(Cleaner, SkipNone, AttrClientEntry):
         if vl is None:
             return None
         return vl.vlan
+
+    @property
+    def passwd(self):
+        vl = self.vlan
+        if vl is not None:
+            vl = self.root.vlan.by_name(vl)
+        if vl is None:
+            return None
+        return vl.passwd
 
     @property
     def prefix(self):
