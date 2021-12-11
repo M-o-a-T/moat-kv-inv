@@ -12,6 +12,7 @@ from distkv.util import P, attrdict
 from distkv.data import data_get
 from distkv.obj.command import std_command
 from distkv_ext.inv.model import InventoryRoot, Host, Wire
+from pprint import pprint
 
 import logging
 
@@ -229,9 +230,10 @@ async def host_port(ctx, name):
 
 
 @cmd_host.command(name="template", short_help="Create config file using a template")
-@click.argument("template", type=click.Path("r"), nargs=1)
+@click.option("-d","--dump", is_flag=True, help="Dump the template's replacement data")
+@click.argument("template", type=click.Path("r"), nargs=-1)
 @click.pass_obj
-async def host_template(obj, template):
+async def host_template(obj, dump, template):
     """\
         Load a template, for generating a host configuration file.
 
@@ -245,10 +247,18 @@ async def host_template(obj, template):
         """
     import jinja2
 
-    e = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(os.path.dirname(template)), autoescape=False
-    )
-    t = e.get_template(os.path.basename(template))
+    if len(template) != 1-dump:
+        if dump:
+            raise click.BadParameter("You can't add a template file name when dumping.")
+        else:
+            raise click.BadParameter("You need to tell me which template to use.")
+
+
+    if not dump:
+        e = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(os.path.dirname(template[0])), autoescape=False
+        )
+        t = e.get_template(os.path.basename(template[0]))
     h = obj.host
 
     nport = {}
@@ -314,7 +324,10 @@ async def host_template(obj, template):
             d.tagged -= vl_one
             d.blocked |= vl_one
     data = dict(host=h, vlans=nport, ports=list(ports.values()))
-    print(t.render(**data), file=obj.stdout)
+    if dump:
+        pprint(data, stream=obj.stdout)
+    else:
+        print(t.render(**data), file=obj.stdout)
 
 
 @cmd_host.command(name="find", short_help="Show the path to another host")

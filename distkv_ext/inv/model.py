@@ -206,7 +206,7 @@ class Network(Cleaner, SkipNone, AttrClientEntry):
         these) in which case it's a 16-byte binary string instead. Sigh.
         """
 
-    ATTRS = ("desc", "name", "vlan", "dhcp", "master", "shift", "virt", "mac")
+    ATTRS = ("desc", "name", "vlan", "dhcp", "master", "shift", "virt", "mac", "wlan")
     AUX_ATTRS = ("net", "vlan_id", "hosts")
     desc = None
     name = None
