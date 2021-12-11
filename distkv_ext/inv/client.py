@@ -170,6 +170,7 @@ std_command(
     ),
     apply=net_apply,
     short_help="Manage networks",
+    list_recursive=True,
 )
 
 

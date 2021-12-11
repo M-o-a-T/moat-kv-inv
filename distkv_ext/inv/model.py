@@ -417,7 +417,7 @@ class Network(Cleaner, SkipNone, AttrClientEntry):
 
 class NetRootB(ClientEntry):
     """\
-        Cables are unnamed and stored as (node,tock) tuple.
+        Networks are unnamed and stored as (node,tock) tuple.
         """
 
     @classmethod
@@ -859,7 +859,7 @@ class Host(Cleaner, SkipNone, AttrClientEntry):
             c = self.root.cable.cable_for(port)
             if c is not None:
                 await c.delete(wait=wait)
-        await super().delete(wait=wait)
+        await super().delete(wait=wait, recursive=True)
 
     async def save(self, *, wait=False):  # pylint: disable=arguments-differ
         if self.net is None:
