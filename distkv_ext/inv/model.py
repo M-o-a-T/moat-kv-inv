@@ -3,8 +3,8 @@ DistKV client data model for Inventory
 """
 import struct
 
+from moat.util import NotGiven, attrdict, Path, yaml_named
 from distkv.obj import ClientEntry, ClientRoot, AttrClientEntry, NamedRoot
-from distkv.util import NotGiven, attrdict, Path, yaml_named
 from distkv.errors import ErrorRoot
 from operator import attrgetter
 from collections import deque

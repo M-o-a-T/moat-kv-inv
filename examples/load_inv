@@ -29,9 +29,9 @@ import yaml
 import logging
 from logging.config import dictConfig
 
+from moat.util import combine_dict
 from distkv.client import open_client
 from distkv.default import CFG
-from distkv.util import combine_dict
 from distkv_ext.inv.model import InventoryRoot
 
 @click.command()

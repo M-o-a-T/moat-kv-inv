@@ -8,7 +8,7 @@ from collections import deque
 from netaddr import IPNetwork, EUI, IPAddress, AddrFormatError
 from operator import attrgetter
 
-from distkv.util import P, attrdict
+from moat.util import P, attrdict
 from distkv.data import data_get
 from distkv.obj.command import std_command
 from distkv_ext.inv.model import InventoryRoot, Host, Wire
@@ -453,9 +453,10 @@ async def cable(ctx):
     """
     List cables
     """
+    obj = ctx.obj
     if ctx.invoked_subcommand is not None:
         return
-    for c in ctx.obj.data.cable.all_children:
+    for c in obj.data.cable.all_children:
         print(c, file=obj.stdout)
 
 
