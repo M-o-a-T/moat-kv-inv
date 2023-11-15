@@ -1,3 +1,9 @@
+moat-kv-inv (0.22.0-9) unstable; urgency=medium
+
+  * Renamed
+
+ -- Matthias Urlichs <matthias@urlichs.de>  Wed, 15 Nov 2023 14:44:00 +0100
+
 distkv-inv (0.22.0-1) unstable; urgency=medium
 
   * Merge

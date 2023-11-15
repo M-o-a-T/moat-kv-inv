@@ -1,22 +1,22 @@
-Source: distkv-inv
+Source: moat-kv-inv
 Maintainer: Matthias Urlichs <matthias@urlichs.de>
 Section: python
 Priority: optional
 Build-Depends: dh-python, python3-setuptools, python3-all, debhelper (>= 9),
-  distkv (>= 0.50),
+  moat-kv (>= 0.50),
 Standards-Version: 3.9.6
-Homepage: https://github.com/smurfix/distinv
+Homepage: https://github.com/smurfix/moat-kv-inv
 
-Package: distkv-inv
+Package: moat-kv-inv
 Architecture: all
 Depends: ${misc:Depends}, ${python3:Depends},
-  distkv (>= 0.50),
-Replaces: python3-distinv
-Conflicts: python3-distinv
-Description: Inventory management for DistKV
- DistInv is a link between DistKV and your network infrastructure.
+  moat-kv (>= 0.50),
+Replaces: python3-distinv, distkv-inv
+Conflicts: python3-distinv, distkv-inv
+Description: Inventory management for MoaT-KV
+ MoaT-KV-inv is a link between MoaT-KV and your network infrastructure.
  .
- DistInv knows about hosts, ports, VLANs, (sub)networks, cables.
+ MoaT-KV-inv knows about hosts, ports, VLANs, (sub)networks, cables.
  .
  It stores
  * which VLAN a network is in
