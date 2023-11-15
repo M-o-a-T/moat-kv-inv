@@ -30,9 +30,9 @@ import logging
 from logging.config import dictConfig
 
 from moat.util import combine_dict
-from distkv.client import open_client
-from distkv.default import CFG
-from distkv_ext.inv.model import InventoryRoot
+from moat.kv.client import open_client
+from moat.kv.default import CFG
+from moat.kv.inv.model import InventoryRoot
 
 @click.command()
 @click.option("-c","--cfg",type=click.File(),default=None,help="DistKV config file")

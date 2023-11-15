@@ -1,0 +1,6 @@
+kv:
+  inv:
+    prefix: !P :.moat.kv.inventory
+    net: 192.168.0.0
+    netmask: 24
+    domain: your.example

@@ -1,21 +1,19 @@
 """
 DistKV client data model for Inventory
 """
-import struct
-
-from moat.util import NotGiven, attrdict, Path, yaml_named
-from distkv.obj import ClientEntry, ClientRoot, AttrClientEntry, NamedRoot
-from distkv.errors import ErrorRoot
-from operator import attrgetter
-from collections import deque
-from weakref import ref, WeakSet, WeakValueDictionary
-
-from typing import Union
-
-from netaddr import IPNetwork, EUI, IPAddress, AddrFormatError
 import logging
+import struct
+from collections import deque
+from operator import attrgetter
+from typing import Union
+from weakref import WeakSet, WeakValueDictionary, ref
 
-logger = logging.getLogger("distkv_ext.inv.model")
+from moat.kv.errors import ErrorRoot
+from moat.kv.obj import AttrClientEntry, ClientEntry, ClientRoot, NamedRoot
+from moat.util import NotGiven, Path, attrdict, yaml_named
+from netaddr import EUI, AddrFormatError, IPAddress, IPNetwork
+
+logger = logging.getLogger(__name__)
 
 
 class SkipNone:
@@ -431,13 +429,13 @@ class NetRootB(ClientEntry):
     async def update(self, value, _locked=False):  # pylint: disable=arguments-differ
         raise ValueError("No values here!")
 
-    def get(self, val):  # pylint: disable=arguments-differ
-        if isinstance(val, int) and val >= 2 ** 64:
+    def get(self, val):  # pylint: disable=arguments-differ,arguments-renamed
+        if isinstance(val, int) and val >= 2**64:
             val = val.to_bytes(16, "big")
         return super().get(val)
 
     def __getitem__(self, val):
-        if isinstance(val, int) and val >= 2 ** 64:
+        if isinstance(val, int) and val >= 2**64:
             val = val.to_bytes(16, "big")
         return super().__getitem__(val)
 
@@ -458,7 +456,7 @@ class NetRoot(NamedRoot, ClientEntry):
             return ClientEntry
         return NetRootB
 
-    def by_name(self, net):  # pylint: disable=arguments-differ
+    def by_name(self, net):  # pylint: disable=arguments-differ,arguments-renamed
         n = super().by_name(net)
         if n is not None:
             return n
@@ -490,11 +488,11 @@ class NetRoot(NamedRoot, ClientEntry):
             return super().allocate(net)
         n = super().allocate(net.prefixlen, exists=True)
         val = net.cidr.value
-        if val >= 2 ** 64:
+        if val >= 2**64:
             val = val.to_bytes(16, "big")
         return n.allocate(val)
 
-    def get(self, net):  # pylint: disable=arguments-differ
+    def get(self, net):  # pylint: disable=arguments-differ,arguments-renamed
         if not isinstance(net, IPNetwork):
             return super().get(net)
         n = super().get(net.prefixlen)

@@ -1,20 +1,19 @@
 # command line interface
 
+import logging
 import os
 import sys
-
-import asyncclick as click
 from collections import deque
-from netaddr import IPNetwork, EUI, IPAddress, AddrFormatError
 from operator import attrgetter
-
-from moat.util import P, attrdict
-from distkv.data import data_get
-from distkv.obj.command import std_command
-from distkv_ext.inv.model import InventoryRoot, Host, Wire
 from pprint import pprint
 
-import logging
+import asyncclick as click
+from moat.kv.data import data_get
+from moat.kv.obj.command import std_command
+from moat.util import P, attrdict
+from netaddr import EUI, AddrFormatError, IPAddress, IPNetwork
+
+from moat.kv.inv.model import Host, InventoryRoot, Wire
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +27,10 @@ async def cli(obj):
     obj.data = await InventoryRoot.as_handler(obj.client)
 
 
-@cli.command()
+@cli.command("dump")
 @click.argument("path", nargs=1)
 @click.pass_obj
-async def dump(obj, path):
+async def dump_(obj, path):
     """Emit the current state as a YAML file."""
     path = P(path)
     await data_get(obj, obj.cfg.inv.prefix + path)
@@ -121,7 +120,7 @@ def get_mac(ctx, attr, val):  # pylint: disable=unused-argument
     return EUI(val)
 
 
-def net_apply(obj, n, kw):
+def net_apply(obj, n, kw):  # pylint:disable=unused-argument
     seen = 0
     val = kw.pop("virt", None)
     if val is not None:
@@ -175,7 +174,6 @@ std_command(
 )
 
 
-
 cmd_host = std_command(
     cli,
     "host",
@@ -197,8 +195,7 @@ cmd_host = std_command(
 )
 
 
-@cmd_host.group(name="port", short_help="Manage ports",
-                invoke_without_command=True)
+@cmd_host.group(name="port", short_help="Manage ports", invoke_without_command=True)
 @click.argument("name", type=str, nargs=1)
 @click.pass_context
 async def host_port(ctx, name):
@@ -230,7 +227,7 @@ async def host_port(ctx, name):
 
 
 @cmd_host.command(name="template", short_help="Create config file using a template")
-@click.option("-d","--dump", is_flag=True, help="Dump the template's replacement data")
+@click.option("-d", "--dump", is_flag=True, help="Dump the template's replacement data")
 @click.argument("template", type=click.Path("r"), nargs=-1)
 @click.pass_obj
 async def host_template(obj, dump, template):
@@ -247,12 +244,11 @@ async def host_template(obj, dump, template):
         """
     import jinja2
 
-    if len(template) != 1-dump:
+    if len(template) != 1 - dump:
         if dump:
             raise click.BadParameter("You can't add a template file name when dumping.")
         else:
             raise click.BadParameter("You need to tell me which template to use.")
-
 
     if not dump:
         e = jinja2.Environment(
@@ -398,6 +394,7 @@ async def host_find(obj, dest):
             print(*(p.name if isinstance(p, Wire) else p for p in pr), file=obj.stdout)
             break
 
+
 std_command(cli, "group", short_help="Manage host config groups")
 
 cmd_wire = std_command(
@@ -410,6 +407,7 @@ cmd_wire = std_command(
         click.option("-l", "--loc", type=str, default=None, help="Location"),
     ),
 )
+
 
 @cmd_wire.command(name="link", short_help="Link two wires")
 @click.argument("dest", type=str, nargs=-1)
@@ -444,7 +442,6 @@ async def wire_link(obj, dest, a_ends, force):
             w = w.port["b"]
             d = d.port["b"]
         await obj.data.cable.link(w, d, force=force)
-
 
 
 @cli.command(short_help="Manage cables")
