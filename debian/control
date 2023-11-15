@@ -5,7 +5,7 @@ Priority: optional
 Build-Depends: dh-python, python3-setuptools, python3-all, debhelper (>= 9),
   moat-kv (>= 0.50),
 Standards-Version: 3.9.6
-Homepage: https://github.com/smurfix/moat-kv-inv
+Homepage: https://github.com/M-o-a-T/moat-kv-inv
 
 Package: moat-kv-inv
 Architecture: all
